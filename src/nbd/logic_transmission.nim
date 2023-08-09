@@ -7,7 +7,7 @@ import ./utils
 
 
 ## Maximum amount of bytes that can be sent in a single chunk (16MB)
-const NBDServerMaxChunkSize = 1024 * 1024 * 16
+const NBDServerMaxChunkSize = 1024u * 1024u * 16u
 
 
 ## Send a command reply in the simple format
@@ -239,7 +239,8 @@ proc handleCommandImpl(connection : NBDConnection, commandFlags : uint16, comman
         var isZero = false
         try:
             isHole = await connection.device.regionIsHole(requestOffset, requestLength)
-            isZero = await connection.device.regionIsZero(requestOffset, requestLength)
+            if isHole: isZero = true
+            else: isZero = await connection.device.regionIsZero(requestOffset, requestLength)
         except:
             connection.log(fmt"Failed to check if region is a hole. Offset: {requestOffset}, length: {requestLength}. Error: {getCurrentExceptionMsg()}")
             await connection.sendTransmissionReply(cookie, NBD_EIO)

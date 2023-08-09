@@ -21,10 +21,9 @@ nbdinfo --list nbd://<hostname>:<port>
 modprobe nbd
 nbd-client <hostname> <port> /dev/nbd0
 
-# Mount an exported device (Windows, requires WNBD and an admin PowerShell)
+# Mount an exported device (Windows, requires WNBD and an admin shell)
 # WNBD driver: https://github.com/cloudbase/wnbd
 wnbd-client map <deviceName> --hostname <host> --port <port>
-Get-Disk
 
 # Create partitions etc (Linux)
 gparted /dev/nbd0

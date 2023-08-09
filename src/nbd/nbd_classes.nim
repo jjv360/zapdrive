@@ -16,9 +16,6 @@ class NBDDeviceInfo:
     ## Human-readable description
     var displayDescription = ""
 
-    ## Block size in bytes
-    var blockSize : uint32 = 1024
-
     ## Disk total size in bytes
     var size : uint64
 

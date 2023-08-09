@@ -183,12 +183,17 @@ proc handleNextOption(connection : NBDConnection, devices : seq[NBDDeviceInfo]) 
         packet.add(deviceInfo.displayDescription.toBytes())
         await connection.sendOptionReply(option, NBD_REP_INFO, packet)
 
+        # Get preferred block sizes
+        const minBlockSize          = 512u
+        const preferredBlockSize    = 1024u
+        const maxBlockSize          = 1024u * 1024u * 8u
+
         # Send NBD_INFO_BLOCK_SIZE (block size)
         packet = @[]
         packet.add(NBD_INFO_BLOCK_SIZE.uint16.toBytes())
-        packet.add(deviceInfo.blockSize.uint32.toBytes())
-        packet.add(deviceInfo.blockSize.uint32.toBytes())
-        packet.add(deviceInfo.blockSize.uint32.toBytes())
+        packet.add(minBlockSize.uint32.toBytes())
+        packet.add(preferredBlockSize.uint32.toBytes())
+        packet.add(maxBlockSize.uint32.toBytes())
         await connection.sendOptionReply(option, NBD_REP_INFO, packet)
 
         # Done
