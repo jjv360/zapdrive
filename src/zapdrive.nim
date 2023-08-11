@@ -1,17 +1,20 @@
 import std/strformat
-import std/asyncdispatch
+import reactive
 import ./zapdrivenbdserver
 
-when isMainModule:
-    
+reactiveStart do():
+
     # Start server
     echo "Starting server..."
-    var server = ZapDriveNBDServer().init(bindAddress = "0.0.0.0")  # TODO: Remove bind address
-    echo fmt"Server is listening on {server.port}"
+    ZapDriveNBDServer.shared.start(bindAddress = "0.0.0.0")  # TODO: Remove bind address
+    echo fmt"Server is listening on {ZapDriveNBDServer.shared.port}"
 
-    # Keep app running as long as asyncdispatch is still doing things
-    while hasPendingOperations():
-        drain()
+    # Mount the app
+    reactiveMount:
 
-    # Finished
-    echo "Server is shutting down..."
+        # Tray icon
+        TrayIcon(tooltip: "ZapDrive")
+
+        # Main app window
+        # Window:
+        #     View(text: "Hello world!")

@@ -33,7 +33,7 @@ class NBDBlock:
 
 
 ## For a range of bytes, get a list of block offsets
-iterator blockOffsetsForRange(offset : uint64, length : uint32, blockSize : uint32) : uint64 =
+iterator blockOffsetsForRange(offset : uint64, length : uint, blockSize : uint) : uint64 =
     for offset1 in countup(offset, offset + length - 1, blockSize):
         yield offset1 - (offset1 mod blockSize)
 
@@ -64,8 +64,10 @@ class NBDBlockDevice of NBDDevice:
     ## Get and cache a block
     method getBlockFromCache(offset : uint64) : Future[NBDBlock] {.async.} =
 
-        # Align offset to the block size
+        # Ensure the alignment is correct
         var alignedOffset = offset - (offset mod this.blockSize)
+        if alignedOffset != offset:
+            raiseAssert("Requested a non-aligned block.")
 
         # Check if block is already cached
         for blk in this.blockCache:
@@ -99,19 +101,23 @@ class NBDBlockDevice of NBDDevice:
         var data : seq[uint8]
 
         # Go through each block until data is filled
-        var numFilled = 0u
-        while numFilled < length:
+        var amountFilled = 0u
+        for blockOffset in blockOffsetsForRange(offset, length, this.blockSize):
 
             # Get the block
-            var blockInfo = await this.getBlockFromCache(offset + numFilled.uint64)
-            let amountToFill = min(length - numFilled, this.blockSize().uint32)
+            var blockInfo = await this.getBlockFromCache(blockOffset)
+            
+            # Check block range
+            let blockDataStart = offset + amountFilled - blockInfo.offset
+            let blockDataLen = min(data.len.uint - amountFilled, this.blockSize)
+            let isEntireBlock = blockDataStart == 0 and blockDataLen == this.blockSize
 
             # Check if allocated
             if blockInfo.state == NBDBlockStateUnallocated:
 
                 # Add zeroes
-                data.add(newSeq[uint8](amountToFill))
-                numFilled += amountToFill
+                data.add(newSeq[uint8](blockDataLen))
+                amountFilled += blockDataLen
                 continue
 
             # If block is unloaded, load it
@@ -122,17 +128,17 @@ class NBDBlockDevice of NBDDevice:
                 blockInfo.state = NBDBlockStateClean
 
             # Copy data from the block
-            if amountToFill >= this.blockSize: 
+            if isEntireBlock:
                 
                 # We want the entire block, just add it directly
                 data.add(blockInfo.data)
-                numFilled += amountToFill
+                amountFilled += blockDataLen
 
             else: 
                 
                 # We want only a part of the block, this must be the last one
-                data.add(blockInfo.data[0 ..< amountToFill])
-                numFilled += amountToFill
+                data.add(blockInfo.data[blockDataStart ..< blockDataLen])
+                amountFilled += blockDataLen
 
         # Done
         return data
@@ -142,24 +148,24 @@ class NBDBlockDevice of NBDDevice:
     method write(offset : uint64, data : seq[uint8]) {.async.} =
     
         # Go through all data
-        var amountSaved = 0u
-        while amountSaved < data.len.uint:
+        var amountFilled = 0u
+        for blockOffset in blockOffsetsForRange(offset, data.len.uint, this.blockSize):
 
             # Get the block
-            var blockInfo = await this.getBlockFromCache(offset + amountSaved.uint)
-
-            # Check if this data piece covers an entire block
-            let blockDataStart = offset + amountSaved.uint - blockInfo.offset
-            let blockDataLen = min(data.len.uint - amountSaved, this.blockSize)
+            var blockInfo = await this.getBlockFromCache(blockOffset)
+            
+            # Check block range
+            let blockDataStart = offset + amountFilled - blockInfo.offset
+            let blockDataLen = min(data.len.uint - amountFilled, this.blockSize)
             let isEntireBlock = blockDataStart == 0 and blockDataLen == this.blockSize
 
             # Special case: If this data covers the entire block, we don't even need to read the existing data, we can just overwrite it immediately
             if isEntireBlock:
 
                 # Write data immediately, since it covers the whole block
-                blockInfo.data = data[amountSaved ..< amountSaved + this.blockSize()]
+                blockInfo.data = data[amountFilled ..< amountFilled + this.blockSize()]
                 blockInfo.state = NBDBlockStateDirty
-                amountSaved += this.blockSize
+                amountFilled += this.blockSize
                 continue
 
             # If block is unallocated, create zero data
@@ -173,18 +179,51 @@ class NBDBlockDevice of NBDDevice:
                 blockInfo.state = NBDBlockStateDirty
 
             # Copy region of source data into the block data
-            blockInfo.data[blockDataStart ..< blockDataStart + blockDataLen] = data[amountSaved ..< amountSaved + blockDataLen]
+            blockInfo.data[blockDataStart ..< blockDataStart + blockDataLen] = data[amountFilled ..< amountFilled + blockDataLen]
             blockInfo.state = NBDBlockStateDirty
-            amountSaved += this.blockSize
+            amountFilled += this.blockSize
+
+
+    ## Check if region is a hole
+    method regionIsHole(offset : uint64, length : uint32) : Future[bool] {.async.} =
+
+        # Go through all blocks in this region
+        for blockOffset in blockOffsetsForRange(offset, length, this.blockSize):
+
+            # Get the block
+            var blockInfo = await this.getBlockFromCache(blockOffset)
+
+            # Check if block is allocated
+            if blockInfo.state != NBDBlockStateUnallocated:
+                return false
+
+        # All blocks are unallocated
+        return true
 
 
     ## Check for zeroes in the data
     method regionIsZero(offset : uint64, length : uint32) : Future[bool] {.async.} =
 
-        # Check each byte, stop if a non-zero is found
-        for i in offset ..< offset + length:
-            if this.memory[i] != 0:
+        # Go through all blocks in this region
+        for blockOffset in blockOffsetsForRange(offset, length, this.blockSize):
+
+            # Get the block
+            var blockInfo = await this.getBlockFromCache(blockOffset)
+
+            # Check if block is unallocated
+            if blockInfo.state != NBDBlockStateUnallocated:
+                continue
+
+            # Check if data is in memory. If not, just return false. This is a slight optimization, in the case where
+            # all the queried blocks are actually in memory right now. This way we don't have to read them from disk.
+            # if it's not in memory, just return false even though it may actually be zeroes.
+            if blockInfo.data.len == 0:
                 return false
 
-        # No non-zero found
+            # Check if block is all zeroes
+            for i in 0 ..< blockInfo.data.len:
+                if blockInfo.data[i] != 0:
+                    return false
+
+        # All is zero
         return true

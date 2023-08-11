@@ -4,7 +4,7 @@ import ./nbd
 
 
 ## NBDServer which connects to our server
-class ZapDriveNBDServer of NBDServer:
+singleton ZapDriveNBDServer of NBDServer:
 
     ## Open a block device
     method openDevice(deviceInfo : NBDDeviceInfo) : Future[NBDDevice] {.async.} =

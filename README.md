@@ -2,7 +2,15 @@
 
 ![](https://img.shields.io/badge/status-incomplete-lightgrey.svg)
 
-This app creates a virtual disk drive on your computer, backed up and synchronized in the cloud.
+<center>
+    <img src="extra/ZapDrive.svg" />
+    <p>
+        <b>ZapDrive</b>
+    </p>
+    <p>
+        Virtual disk backed up in the cloud.
+    </p>
+</center>
 
 ## Building
 

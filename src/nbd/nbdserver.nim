@@ -21,7 +21,7 @@ class NBDServer:
     var clients : seq[NBDConnection]
 
     ## Constructor
-    method init(port : int = 0, bindAddress : string = "127.0.0.1") =
+    method start(port : int = 0, bindAddress : string = "127.0.0.1") =
 
         # Create server
         this.serverSocket = newAsyncSocket()

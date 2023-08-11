@@ -2,3 +2,4 @@
 # Build output
 /zapdrive
 /zapdrive.exe
+*.WebView2

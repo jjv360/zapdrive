@@ -13,3 +13,4 @@ bin           = @["zapdrive"]
 requires "nim >= 2.0.0"
 requires "classes >= 0.3.17"
 requires "elvis >= 0.5.0"
+requires "reactive >= 0.3.0"
