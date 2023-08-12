@@ -2,15 +2,14 @@
 
 ![](https://img.shields.io/badge/status-incomplete-lightgrey.svg)
 
-<center>
+<div align="center">
     <img src="extra/ZapDrive.svg" />
-    <p>
-        <b>ZapDrive</b>
-    </p>
-    <p>
-        Virtual disk backed up in the cloud.
-    </p>
-</center>
+    <br/>
+    <br/>
+    <b>ZapDrive</b>
+    <br/>
+    Virtual disk backed up in the cloud.
+</div>
 
 ## Building
 

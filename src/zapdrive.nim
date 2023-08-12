@@ -1,8 +1,12 @@
 import std/strformat
-import reactive
+# import reactive
+import "../../nim-reactive/src/reactive"
 import ./zapdrivenbdserver
 
 reactiveStart do():
+
+    # Load assets
+
 
     # Start server
     echo "Starting server..."
@@ -13,7 +17,7 @@ reactiveStart do():
     reactiveMount:
 
         # Tray icon
-        TrayIcon(tooltip: "ZapDrive")
+        TrayIcon(tooltip: "ZapDrive", icon: reactiveAsset("assets/ZapDrive Windows Tray.png"))
 
         # Main app window
         # Window:
