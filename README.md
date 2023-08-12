@@ -11,6 +11,16 @@
     Virtual disk backed up in the cloud.
 </div>
 
+## How it works
+
+ZapDrive allows you to create virtual disk drives, and sync them to cloud providers like Dropbox, etc. It does this by hosting a local [NBD](https://github.com/NetworkBlockDevice/nbd/blob/master/doc/proto.md) server, and using existing NBD client drivers (such as [WNBD](https://github.com/cloudbase/wnbd) on Windows) to connect to it.
+
+The data for the virtual drive is exported as blocks, which are cached locally and synchronized to your selected cloud provider.
+
+There is also a global server which tracks device access in order to ensure the device is not accessed by more than one machine at a time. If you connect to a drive, a request is sent to any other devices to flush and disconnect them first.
+
+Due to the virtual drive being a standard block device, you're able to use the full power of any filesystem you like, including encryption, compression, symlinks, etc.
+
 ## Building
 
 - Make sure you have [Nim](https://nim-lang.org) installed

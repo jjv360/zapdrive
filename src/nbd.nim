@@ -5,4 +5,5 @@
 import ./nbd/nbdserver
 import ./nbd/nbd_classes
 import ./nbd/memorydevice
-export nbdserver, nbd_classes, memorydevice
+import ./nbd/blockdevice
+export nbdserver, nbd_classes, memorydevice, blockdevice

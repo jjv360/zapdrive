@@ -37,9 +37,16 @@ class NBDDevice:
     ## Device name
     var info : NBDDeviceInfo
 
+    ## True if currently connected
+    var connected = false
+
     ## Constructor
     method init(info : NBDDeviceInfo) =
         this.info = info
+
+    ## Connect to the device
+    method connect() {.async.} =
+        raise newException(IOError, "Not implemented.")
 
     ## Read data from the device
     method read(offset : uint64, length : uint32) : Future[seq[uint8]] {.async.} =

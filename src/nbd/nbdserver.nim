@@ -127,9 +127,16 @@ class NBDServer:
 
             # Open device
             var device = await this.openDevice(deviceInfo)
+            if device == nil:
+                raise newException(IOError, "Device not found.")
             
             # Notify the connection
             await connection.onDeviceAccessStart(connection.device)
+
+            # Connect the device if needed
+            if not connection.device.connected:
+                await connection.device.connect()
+                connection.device.connected = true
 
             # Start the connection
             connection.log(fmt"Opened device '{device.info.name}' successfully.")
