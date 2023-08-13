@@ -40,7 +40,7 @@ class ZDTrayIcon of Component:
                     MenuItem(title: "(no drives)", disabled)
 
                 # Add drive menu
-                MenuItem(title: "Open drive"):
+                MenuItem(title: "New drive"):
                     MenuItem(title: "Temporary RAM Drive",  onPress: proc() = this.sendEventToProps("onAddDrive", "ram"))
                     MenuItem(title: "Dropbox",              onPress: proc() = this.sendEventToProps("onAddDrive", "dropbox"))
                     MenuItem(title: "FTP",                  onPress: proc() = this.sendEventToProps("onAddDrive", "ftp"))

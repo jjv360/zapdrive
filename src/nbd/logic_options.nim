@@ -185,7 +185,7 @@ proc handleNextOption(connection : NBDConnection, devices : seq[NBDDeviceInfo]) 
 
         # Get preferred block sizes
         const minBlockSize          = 512u
-        const preferredBlockSize    = 1024u
+        const preferredBlockSize    = 1024u * 8u
         const maxBlockSize          = 1024u * 1024u * 8u
 
         # Send NBD_INFO_BLOCK_SIZE (block size)

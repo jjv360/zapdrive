@@ -83,7 +83,7 @@ proc handleReadCommandImpl(connection : NBDConnection, commandFlags : uint16, co
         var data : seq[uint8]
         try:
             data = await connection.device.read(requestOffset, requestLength)
-            if data.len.uint32 != requestLength: raise newException(IOError, "Returned data was not the correct length.")
+            if data.len.uint32 != requestLength: raise newException(IOError, "Returned data was not the correct length. Got length " & $data.len)
         except:
             connection.log(fmt"Failed to read data from the device. Offset: {requestOffset}, length: {requestLength}. Error: {getCurrentExceptionMsg()}")
             await connection.sendTransmissionReply(cookie, NBD_EIO)
@@ -219,6 +219,12 @@ proc handleCommandImpl(connection : NBDConnection, commandFlags : uint16, comman
         # let startBlock = requestOffset div connection.device.info.blockSize.uint64
         # let endBlock = requestOffsetEnd div connection.device.info.blockSize.uint64 + (addExtraBlock ? 1 ! 0).uint64
 
+        # Check if range is too big
+        if requestLength > 1024*1024*16:
+            connection.log(fmt"Client requested block status for a range too big.")
+            await connection.sendTransmissionReply(cookie, NBD_EINVAL)
+            return
+
         # Check if range is outside the device size
         if requestOffset + requestLength > connection.device.info.size:
             connection.log(fmt"Client requested block status for a range outside the device size.")
@@ -324,4 +330,4 @@ proc handleTransmissionPhase*(connection : NBDConnection) {.async.} =
             requestData = await connection.socket.recvFixedLengthData(requestLength.int)
 
         # No more reading needed! Handle the command
-        await handleCommand(connection, commandFlags, commandType, cookie, requestOffset, requestLength, requestData)
+        asyncCheck handleCommand(connection, commandFlags, commandType, cookie, requestOffset, requestLength, requestData)

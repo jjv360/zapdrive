@@ -260,3 +260,10 @@ proc recvFixedLengthString*(socket : AsyncSocket, length : int) : Future[string]
 
     # Convert to string
     return data.toString()
+
+
+## Check if a seq is filled with zeroes
+proc isZeroes*(data : seq[uint8]) : bool =
+    for i in 0 ..< data.len:
+        if data[i] != 0: return false
+    return true

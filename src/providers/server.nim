@@ -25,7 +25,6 @@ singleton ZapDriveServer of NBDServer:
     method openDevice(deviceInfo : NBDDeviceInfo) : Future[NBDDevice] {.async.} =
 
         # Find device
-        echo "OPENING DEVICE " & deviceInfo.name
         for device in this.devices:
             if device.uuid == deviceInfo.name:
 
@@ -43,7 +42,6 @@ singleton ZapDriveServer of NBDServer:
     method listDevices() : Future[seq[NBDDeviceInfo]] {.async.} =
 
         # Create list of devices
-        echo "LISTING "
         var devices : seq[NBDDeviceInfo]
         for device in this.devices:
             devices.add(device.info)

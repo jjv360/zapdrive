@@ -44,9 +44,9 @@ class NBDDevice:
     method init(info : NBDDeviceInfo) =
         this.info = info
 
-    ## Connect to the device
+    ## Connect to the device. The default implementation does nothing.
     method connect() {.async.} =
-        raise newException(IOError, "Not implemented.")
+        return
 
     ## Read data from the device
     method read(offset : uint64, length : uint32) : Future[seq[uint8]] {.async.} =
