@@ -56,14 +56,6 @@ class NBDBlock:
     var isDirty = false
 
 
-
-
-## For a range of bytes, get a list of block offsets
-iterator blockOffsetsForRange(offset : uint64, length : uint, blockSize : uint) : uint64 =
-    for offset1 in countup(offset, offset + length - 1, blockSize):
-        yield offset1 - (offset1 mod blockSize)
-
-
 ##
 ## A block-based device that stores data in blocks of a fixed size. Can be used as a base class for sparse devices.
 ## This class also handles memory and disk caching of blocks, and calling back to the subclass to load/save blocks.
@@ -187,15 +179,22 @@ class NBDBlockDevice of NBDDevice:
 
         # Go through each block until data is filled
         var amountFilled = 0u
-        for blockOffset in blockOffsetsForRange(offset, length, this.blockSize):
+        var lastBlock = 0u
+        while amountFilled < length:
 
             # Get the block
+            var blockOffset = (offset + amountFilled) - ((offset + amountFilled) mod this.blockSize)
             var blockInfo = await this.getBlock(blockOffset, loadData = true)
+
+            # Sanity check
+            if blockOffset == lastBlock and amountFilled > 0: raiseAssert("Block offset is the same as last block.")
+            lastBlock = blockOffset
             
             # Check block range
             let blockDataStart = offset + amountFilled - blockInfo.offset
             let blockDataLen = min(length - amountFilled, this.blockSize - blockDataStart)
             let isEntireBlock = blockDataStart == 0 and blockDataLen == this.blockSize
+            # echo fmt"READ blk={blockInfo.offset} offset={blockDataStart} len={blockDataLen} isEntireBlock={isEntireBlock}"
 
             # Check if allocated
             if blockInfo.state == NBDBlockStateUnallocated:
@@ -227,10 +226,16 @@ class NBDBlockDevice of NBDDevice:
     
         # Go through all data
         var amountFilled = 0u
-        for blockOffset in blockOffsetsForRange(offset, data.len.uint, this.blockSize):
+        var lastBlock = 0u
+        while amountFilled < data.len.uint:
 
             # Get the block
+            var blockOffset = (offset + amountFilled) - ((offset + amountFilled) mod this.blockSize)
             var blockInfo = await this.getBlock(blockOffset, loadData = false)
+
+            # Sanity check
+            if blockOffset == lastBlock and amountFilled > 0: raiseAssert("Block offset is the same as last block.")
+            lastBlock = blockOffset
             
             # Check block range
             let blockDataStart = offset + amountFilled - blockInfo.offset
@@ -275,10 +280,16 @@ class NBDBlockDevice of NBDDevice:
     
         # Go through all data
         var amountFilled = 0u
-        for blockOffset in blockOffsetsForRange(offset, length.uint, this.blockSize):
+        var lastBlock = 0u
+        while amountFilled < length:
 
             # Get the block
+            var blockOffset = (offset + amountFilled) - ((offset + amountFilled) mod this.blockSize)
             var blockInfo = await this.getBlock(blockOffset, loadData = false)
+
+            # Sanity check
+            if blockOffset == lastBlock and amountFilled > 0: raiseAssert("Block offset is the same as last block.")
+            lastBlock = blockOffset
             
             # Check block range
             let blockDataStart = offset + amountFilled - blockInfo.offset
@@ -321,10 +332,20 @@ class NBDBlockDevice of NBDDevice:
     method regionIsHole(offset : uint64, length : uint32) : Future[bool] {.async.} =
 
         # Go through all blocks in this region
-        for blockOffset in blockOffsetsForRange(offset, length, this.blockSize):
+        var amountFilled = 0u
+        var lastBlock = 0u
+        while amountFilled < length:
 
             # Get the block
+            var blockOffset = (offset + amountFilled) - ((offset + amountFilled) mod this.blockSize)
             var blockInfo = await this.getBlock(blockOffset, loadData = false)
+            let blockDataStart = offset + amountFilled - blockInfo.offset
+            let blockDataLen = min(length.uint - amountFilled, this.blockSize - blockDataStart)
+
+            # Sanity check
+            if blockOffset == lastBlock and amountFilled > 0: raiseAssert("Block offset is the same as last block.")
+            lastBlock = blockOffset
+            amountFilled += blockDataLen
 
             # Check if block is allocated
             if blockInfo.state != NBDBlockStateUnallocated:
@@ -338,10 +359,20 @@ class NBDBlockDevice of NBDDevice:
     method regionIsZero(offset : uint64, length : uint32) : Future[bool] {.async.} =
 
         # Go through all blocks in this region
-        for blockOffset in blockOffsetsForRange(offset, length, this.blockSize):
+        var amountFilled = 0u
+        var lastBlock = 0u
+        while amountFilled < length:
 
             # Get the block
+            var blockOffset = (offset + amountFilled) - ((offset + amountFilled) mod this.blockSize)
             var blockInfo = await this.getBlock(blockOffset, loadData = false)
+            let blockDataStart = offset + amountFilled - blockInfo.offset
+            let blockDataLen = min(length.uint - amountFilled, this.blockSize - blockDataStart)
+
+            # Sanity check
+            if blockOffset == lastBlock and amountFilled > 0: raiseAssert(fmt"Block offset is the same as last block. offset={offset} length={length} blockOffset={blockOffset} lastBlock={lastBlock} amountFilled={amountFilled} blockDataStart={blockDataStart} blockDataLen={blockDataLen}")
+            lastBlock = blockOffset
+            amountFilled += blockDataLen
 
             # Check if block is unallocated
             if blockInfo.state != NBDBlockStateUnallocated:
@@ -508,7 +539,7 @@ class NBDBlockDevice of NBDDevice:
         if not dirtyBlock.isDirty: return
 
         # Write block to permanent storage
-        let allZero = dirtyBlock.state == NBDBlockStateUnallocated ? true ! dirtyBlock.data.allZero()
+        let allZero = dirtyBlock.data.len == 0 ? true ! dirtyBlock.data.allZero()
         let updateNonce = dirtyBlock.updateNonce
         try:
 

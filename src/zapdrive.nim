@@ -6,6 +6,7 @@ import reactive
 import ./providers/server
 import ./providers/basedrive
 import ./providers/memdisk
+import ./providers/filedisk
 import ./ui/trayicon
 import ./wnbd_client
 
@@ -34,6 +35,7 @@ class MyApp of Component:
         # Check drive type
         var drive : ZDDevice = nil
         if e.value == "ram": drive = await ZDMemoryDisk.createNew()
+        elif e.value == "file": drive = await ZDFileDisk.createNew("C:\\Users\\jjv36\\Desktop\\FileDisk.vhd")
         else: 
             alert("Unknown drive type: " & e.value, "Error", dlgError)
             return

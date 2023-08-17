@@ -29,6 +29,13 @@ class ZDFileDisk of ZDDevice:
         drive.info.displayName = "File Disk"
         drive.info.displayDescription = "Sparse file disk."
         drive.info.size = 1024 * 1024 * 1024 * 32
+
+        # Ensure blocks folder exists
+        let blocksFolder = drive.folder / "blocks"
+        if not dirExists(blocksFolder):
+            createDir(blocksFolder)
+
+        # Done
         return drive
     
 
@@ -57,28 +64,25 @@ class ZDFileDisk of ZDDevice:
     ## Write a block to permanent storage
     method writeBlock(offset : uint64, data : string) : Future[void] {.async.} =
     
-        # Remove existing block
-        for i in 0 ..< this.blocks.len:
-            if this.blocks[i].offset == offset:
-                this.blocks.del(i)
-                break
+        # Open file
+        let path = this.folder / "blocks" / ($offset & ".blk")
+        let file = openAsync(path, fmWrite)
+        defer: file.close()
 
-        # Add new data
-        this.blocks.add(( offset, data ))
+        # Write file content
+        await file.write(data)
 
 
     ## Delete a block from permanent storage
     method deleteBlock(offset : uint64) : Future[void] {.async.} =
     
         # Remove existing block
-        for i in 0 ..< this.blocks.len:
-            if this.blocks[i].offset == offset:
-                this.blocks.del(i)
-                break
+        let path = this.folder / "blocks" / ($offset & ".blk")
+        if fileExists(path):
+            removeFile(path)
 
 
     ## Fetch debug stats for this device
     method debugStats() : string =
         let superStats = super.debugStats()
-        let memoryUsage = formatSize(this.blocks.len * this.blockSize.int)
-        return fmt"type=mem usage={memoryUsage} {superStats}"
+        return fmt"{superStats} type=file"
