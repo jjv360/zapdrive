@@ -1,6 +1,7 @@
 import std/strformat
 import std/asyncdispatch
 import std/os
+import stdx/osproc
 import reactive
 import ./providers/server
 import ./providers/basedrive
@@ -14,12 +15,16 @@ class MyApp of Component:
     ## WNBD client
     var wnbd : WNBDClient = WNBDClient.init()
 
+    ## Driver download progress
+    var driverIsDownloading = false
+    var driverDownloadProgress = ""
+
     ## On mount
     method onMount() =
 
         # Start server
         echo "Starting server..."
-        ZapDriveServer.shared.start(bindAddress = "0.0.0.0")  # TODO: Remove bind address
+        ZapDriveServer.shared.start()
         echo fmt"Server is listening on {ZapDriveServer.shared.port}"
 
 
@@ -53,9 +58,14 @@ class MyApp of Component:
             alert("Unknown drive: " & e.value, "Error", dlgError)
             return
 
+        # Stop if driver is downloading
+        if this.driverIsDownloading:
+            alert("Please wait for the driver to finish downloading", "Error", dlgError)
+            return
+
         # Check if installed
         let versions = WNBDClient.installedVersion()
-        if versions.client != "" and false:
+        if versions.client != "":
 
             # Driver found
             echo fmt"[WNBDClient] Found driver: client={versions.client} lib={versions.lib} driver={versions.driver}"
@@ -69,13 +79,42 @@ class MyApp of Component:
                 return
 
             # Install it
-            await WNBDClient.installDriver()
+            try:
+                this.driverIsDownloading = true
+                this.driverDownloadProgress = "Downloading..."
+                this.renderAgain()
+                await WNBDClient.installDriver(proc(progress : float, txt : string) =
+                    echo txt
+                    this.driverDownloadProgress = txt
+                    this.renderAgain()
+                )
+            except:
+                displayCurrentException("Failed to install driver")
+                return
+            finally:
+                this.driverIsDownloading = false
+                this.driverDownloadProgress = ""
+                this.renderAgain()
+
+        # Stop if driver is downloading
+        if drive.wnbdClient != nil:
+            return
 
         # Start connection
-        echo fmt"Connecting: uuid={drive.uuid} name={drive.info.displayName}" 
-        # let result = execShellCmd(fmt"""wnbd-client map --hostname=localhost --port={ZapDriveServer.shared.port} --instance-name="{drive.uuid}" """)
-        # if result != 0:
-        #     alert(fmt"Failed to connect to drive: Code {result}", "Error", dlgError)
+        try:
+            echo fmt"Connecting: uuid={drive.uuid} name={drive.info.displayName}" 
+            drive.wnbdClient = WNBDClient.init()
+            drive.wnbdClient.port = ZapDriveServer.shared.port
+            drive.wnbdClient.exportName = drive.uuid
+            this.renderAgain()
+            await drive.wnbdClient.connect()
+        except:
+            displayCurrentException("Failed to connect to drive")
+        finally:
+            echo fmt"Disconnected: uuid={drive.uuid} name={drive.info.displayName}" 
+            drive.wnbdClient = nil
+            this.renderAgain()
+
 
 
     ## Called when the user wants to remove a drive
@@ -89,6 +128,7 @@ class MyApp of Component:
 
         # Tray icon
         ZDTrayIcon(
+            driverStatus: this.driverDownloadProgress,
             onAddDrive: proc(e: ReactiveEvent) = 
                 asyncCheck this.onAddDrive(e)
             ,

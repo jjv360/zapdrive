@@ -1,9 +1,9 @@
 import std/asyncdispatch
 import std/times
 import std/strformat
+import stdx/sequtils
 import classes
 import ./nbd_classes
-import ./utils
 
 ##
 ## Block states
@@ -150,7 +150,6 @@ class NBDBlockDevice of NBDDevice:
             # Try load the data
             try:
                 blk.isLoading = true
-                echo "READ BLOCK ", blk.offset
                 let data = await this.readBlock(blk.offset)
                 if data.len.uint64 != this.blockSize: raise newException(IOError, fmt"Wrong block size returned from readBlock(). Expected {this.blockSize} bytes, got {data.len} bytes.")
                 blk.data = data
@@ -411,15 +410,8 @@ class NBDBlockDevice of NBDDevice:
         this.cleanupLoopRunning = true
 
         # Run loop
-        echo "[NBDBlockDevice] Cleanup loop started"
-        var state = ""
+        # echo "[NBDBlockDevice] Cleanup loop started"
         while true:
-
-            # Update state
-            let newState = fmt"[NBDBlockDevice] Stats: blocks={this.blockCache.len} cached={this.currentCachedBlocks} unstable={this.currentUnstableBlocks} saving={this.currentSavingBlocks} loading={this.currentLoadingBlocks} ops={this.currentBlockOperations}"
-            if newState != state:
-                echo newState
-                state = newState
 
             # Wait a bit so we don't end prematurely
             await sleepAsync(1)
@@ -438,7 +430,7 @@ class NBDBlockDevice of NBDDevice:
 
         # Done
         this.cleanupLoopRunning = false
-        echo "[NBDBlockDevice] Cleanup loop stopped"
+        # echo "[NBDBlockDevice] Cleanup loop stopped"
 
 
     ## Cleanup a dirty block
@@ -471,33 +463,42 @@ class NBDBlockDevice of NBDDevice:
         if dirtyBlock.state != NBDBlockStateDirty: raiseAssert("Tried to save a block in an invalid state.")
 
         # Write block to permanent storage
-        let allZero = dirtyBlock.data.isZeroes()
+        let allZero = dirtyBlock.data.allZero()
         let updateNonce = dirtyBlock.updateNonce
         try:
+
+            # Write it
             dirtyBlock.isSaving = true
             if allZero:
                 # echo "[NBDBlockDevice] Deleting zeroed dirty block: ", dirtyBlock.offset
-                echo "DELETE BLOCK ", dirtyBlock.offset
                 await this.deleteBlock(dirtyBlock.offset)
             else:
                 # echo "[NBDBlockDevice] Writing dirty block: ", dirtyBlock.offset
-                echo "WRITE BLOCK ", dirtyBlock.offset
                 await this.writeBlock(dirtyBlock.offset, dirtyBlock.data)
+
         except:
+
+            # On error, return so it can be tried again
             echo "[NBDBlockDevice] Error writing block to permanent storage: ", getCurrentExceptionMsg()
+            return
+
         finally:
+
+            # Mark as finished saving
             dirtyBlock.isSaving = false
 
         # If the nonce changed while we were writing, this block was modified again. It's still dirty.
         if dirtyBlock.updateNonce != updateNonce:
             return
 
-        # Mark block as clean now
+        # Mark block as clean now, or unallocated if the block was deleted
         if allZero:
             dirtyBlock.state = NBDBlockStateUnallocated
             dirtyBlock.data = newSeq[uint8](0)
         else:
             dirtyBlock.state = NBDBlockStateClean
+
+        # Update access stats
         dirtyBlock.updateNonce += 1
         dirtyBlock.lastAccess = cpuTime()
 
@@ -523,7 +524,7 @@ class NBDBlockDevice of NBDDevice:
         if oldestBlock.state != NBDBlockStateClean: raiseAssert("Tried to remove a block in an invalid state.")
 
         # Remove block from memory
-        echo "[NBDBlockDevice] Removing clean block from memory: ", oldestBlock.offset
+        # echo "[NBDBlockDevice] Removing clean block from memory: ", oldestBlock.offset
         oldestBlock.data = newSeq[uint8](0)
         oldestBlock.state = NBDBlockStateUnloaded
         

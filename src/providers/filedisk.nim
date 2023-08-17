@@ -2,60 +2,56 @@ import std/asyncdispatch
 import std/oids
 import std/strformat
 import std/strutils
+import std/os
+import std/asyncfile
 import classes
 import reactive
 import ../nbd
 import ./basedrive
 
-## Last used ID
-var LastID = 1
+## A file disk. This drive saves blocks to a folder on the user's device.
+class ZDFileDisk of ZDDevice:
 
-## A memory disk. This drive is lost once it is removed.
-class ZDMemoryDisk of ZDDevice:
-    
-    ## Blocks
-    var blocks : seq[tuple[offset : uint64, data : seq[uint8]]]
-
+    ## Root path to the drive folder
+    var folder = ""
 
     ## Create a new memory disk.
-    method createNew() : Future[ZDDevice] {.static, async.} =
+    method createNew(path : string) : Future[ZDDevice] {.static, async.} =
 
-        ## Ask user for size
-        alert("Enter size in MB:", "New RAM disk", dlgQuestion)
+        # TODO: Read disk info from file
 
         # Create it
-        let drive = ZDMemoryDisk().init()
-        drive.uuid = "ramdisk-" & $genOid()
+        let drive = ZDFileDisk().init()
+        drive.folder = absolutePath(path)
+        drive.uuid = "file-" & $genOid()
         drive.info = NBDDeviceInfo.init()
         drive.info.name = drive.uuid
-        drive.info.displayName = "RAM Disk #" & $LastID
-        drive.info.displayDescription = "Temporary memory drive."
-        drive.info.size = 1024 * 1024 * 512
+        drive.info.displayName = "File Disk"
+        drive.info.displayDescription = "Sparse file disk."
+        drive.info.size = 1024 * 1024 * 1024 * 32
         return drive
     
 
     ## Check if a block exists
     method blockExists(offset : uint64) : Future[bool] {.async.} =
 
-        # Check blocks
-        for blk in this.blocks:
-            if blk.offset == offset:
-                return true
+        # Check if block exists
+        let path = this.folder / "blocks" / ($offset & ".blk")
 
-        # Not found
-        return false
+        # Check if exists
+        return fileExists(path)
 
 
     ## Read a block from permanent storage
     method readBlock(offset : uint64) : Future[seq[uint8]] {.async.} =
 
-        # Check blocks
-        for blk in this.blocks:
-            if blk.offset == offset:
-                return blk.data
+        # Open file
+        let path = this.folder / "blocks" / ($offset & ".blk")
+        let file = openAsync(path, fmRead)
+        defer: file.close()
 
-        # Not found, return blank zeros. Missing blocks are just "holes" of zeros.
-        return newSeq[uint8](this.blockSize)
+        # Return file content
+        return await file.readAll()
 
 
     ## Write a block to permanent storage

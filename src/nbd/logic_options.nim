@@ -1,5 +1,6 @@
 import std/asyncdispatch
 import std/strformat
+import stdx/strutils
 import elvis
 import ./constants
 import ./nbd_classes

@@ -42,12 +42,14 @@ class ZDTrayIcon of Component:
                 # Add drive menu
                 MenuItem(title: "New drive"):
                     MenuItem(title: "Temporary RAM Drive",  onPress: proc() = this.sendEventToProps("onAddDrive", "ram"))
-                    MenuItem(title: "Dropbox",              onPress: proc() = this.sendEventToProps("onAddDrive", "dropbox"))
-                    MenuItem(title: "FTP",                  onPress: proc() = this.sendEventToProps("onAddDrive", "ftp"))
-                    MenuItem(title: "pCloud",               onPress: proc() = this.sendEventToProps("onAddDrive", "pcloud"))
+                    MenuItem(title: "Local File",           onPress: proc() = this.sendEventToProps("onAddDrive", "file"))
+
+                # Driver status
+                MenuItem(separator)
+                if this.props{"driverStatus"}.string.len > 0:
+                    MenuItem(title: "Driver: " & this.props{"driverStatus"}.string, disabled)
 
                 # Settings
-                MenuItem(separator)
                 MenuItem(title: "Options"):
                     MenuItem(title: "Start on login")
                     MenuItem(title: "Uninstall")

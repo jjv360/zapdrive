@@ -3,21 +3,7 @@
 
 import std/asyncnet
 import std/asyncdispatch
-import std/strutils
-import std/sequtils
-
-## Convert a byte array to a string ... Nim, why... why do you not have this?
-## See: https://github.com/nim-lang/Nim/issues/14810
-proc toString*(bytes: openarray[byte]): string =
-    if bytes.len == 0: return ""
-    result = newString(bytes.len)
-    copyMem(result[0].addr, bytes[0].unsafeAddr, bytes.len)
-
-
-## Convert a string to a byte array with no zero terminator
-## TODO: Why doesn't `openarray` work here?
-proc toBytes*(str: string): seq[uint8] =
-    return str.toOpenArrayByte(0, str.len - 1).toSeq()
+import stdx/strutils
 
 
 ## Offset a raw pointer by a certain number of bytes
@@ -260,10 +246,3 @@ proc recvFixedLengthString*(socket : AsyncSocket, length : int) : Future[string]
 
     # Convert to string
     return data.toString()
-
-
-## Check if a seq is filled with zeroes
-proc isZeroes*(data : seq[uint8]) : bool =
-    for i in 0 ..< data.len:
-        if data[i] != 0: return false
-    return true

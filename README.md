@@ -21,6 +21,12 @@ There is also a global server which tracks device access in order to ensure the 
 
 Due to the virtual drive being a standard block device, you're able to use the full power of any filesystem you like, including encryption, compression, symlinks, etc.
 
+## Why this?
+
+The biggest reason is for symlink support. Some tools (like `npm link` and `nx`) work by linking folders together, which often cause issues for cloud providers. 
+
+The purpose of this tool is to provide a more robust way of syncing files. It's like carrying a flash drive with you, except the drive is in the cloud and you can't lose it somewhere.
+
 ## Building
 
 - Make sure you have [Nim](https://nim-lang.org) installed
