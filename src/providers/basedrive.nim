@@ -84,4 +84,5 @@ class ZDDevice of NBDBlockDevice:
 
     ## Fetch debug stats for this device
     method debugStats() : string =
-        return fmt"id={this.uuid} unstable={this.currentUnstableBlocks} saving={this.currentSavingBlocks} loading={this.currentLoadingBlocks} ops={this.currentBlockOperations}"
+        let superStats = super.debugStats()
+        return fmt"id={this.uuid} {superStats}"

@@ -1,7 +1,6 @@
 import std/asyncdispatch
 import std/asyncnet
 import std/strformat
-import stdx/sequtils
 import ./constants
 import ./nbd_classes
 import ./utils
@@ -18,6 +17,7 @@ proc sendTransmissionSimpleReply(connection : NBDConnection, cookie : uint64, er
     packet.add(errorCode)
     packet.add(cookie)
     packet.add(data)
+    if connection.socket.isClosed: return
     await connection.socket.send(packet)
 
 
@@ -30,6 +30,7 @@ proc sendTransmissionStructuredReplyChunk(connection : NBDConnection, cookie : u
     packet.add(cookie)
     packet.add(data.len.uint32)
     packet.add(data)
+    if connection.socket.isClosed: return
     await connection.socket.send(packet)
 
 
@@ -120,10 +121,10 @@ proc handleWriteCommandImpl(connection : NBDConnection, commandFlags : uint16, c
     try:
 
         # Check if zeroes
-        if requestData.allZero:
-            await connection.device.writeZeroes(requestOffset, requestLength)
-        else:
-            await connection.device.write(requestOffset, requestData)
+        # if requestData.allZero:
+        #     await connection.device.writeZeroes(requestOffset, requestLength)
+        # else:
+        await connection.device.write(requestOffset, requestData)
 
     except:
         connection.log(fmt"Failed to write data to the device. Offset: {requestOffset}, length: {requestLength}. Error: {getCurrentExceptionMsg()}")
@@ -324,4 +325,5 @@ proc handleTransmissionPhase*(connection : NBDConnection) {.async.} =
             requestData = await connection.socket.recvFixedLengthData(requestLength.int)
 
         # No more reading needed! Handle the command
+        # echo fmt"CMD flags={commandFlags} type={commandType} cookie={cookie} offset={requestOffset} length={requestLength} data={requestData.len}"
         asyncCheck handleCommand(connection, commandFlags, commandType, cookie, requestOffset, requestLength, requestData)

@@ -7,6 +7,10 @@ import classes
 import elvis
 import ./nbd_classes
 
+## Amount of time (in seconds) to wait after a block is written before flushing it to permanent storage. Flushes can still
+## be forced via the flush() command to flush them early.
+const AutoFlushDelay = 4.0
+
 ##
 ## Block states
 type NBDBlockState* = enum
@@ -43,6 +47,9 @@ class NBDBlock:
     ## Last time this block was accessed
     var lastAccess : float = cpuTime()
 
+    ## Earliest date we are allowed to flush this block to disk
+    var flushDate = 0.0
+
     ## Block state
     var state : NBDBlockState = NBDBlockStateUnallocated
 
@@ -64,19 +71,19 @@ class NBDBlockDevice of NBDDevice:
     ## Cached blocks
     var blockCache : seq[NBDBlock]
 
+    ## Block size in bytes
+    var blockSize : uint = 1024u * 1024u * 8u
+
     ## Amount of data to keep in memory
     var desiredMemorySize : uint64 = 1024 * 1024 * 128
 
-    ## Maximum amount of memory to retain before blocking
+    ## TODO: Maximum amount of memory to retain before blocking
     var maximumMemorySize : uint64 = 1024 * 1024 * 512
 
     ## Maximum number of parallel block operations
     var maxParallelOperations = 10
 
 
-
-    ## Block size in bytes
-    method blockSize() : uint = 1024u * 1024u * 1u
 
     ## Check if a block exists in permanent storage
     method blockExists(offset : uint64) : Future[bool] {.async.} = raiseAssert("You must implement the blockExists() method in your subclass.")
@@ -185,16 +192,17 @@ class NBDBlockDevice of NBDDevice:
             # Get the block
             var blockOffset = (offset + amountFilled) - ((offset + amountFilled) mod this.blockSize)
             var blockInfo = await this.getBlock(blockOffset, loadData = true)
-
-            # Sanity check
-            if blockOffset == lastBlock and amountFilled > 0: raiseAssert("Block offset is the same as last block.")
-            lastBlock = blockOffset
             
             # Check block range
             let blockDataStart = offset + amountFilled - blockInfo.offset
             let blockDataLen = min(length - amountFilled, this.blockSize - blockDataStart)
             let isEntireBlock = blockDataStart == 0 and blockDataLen == this.blockSize
             # echo fmt"READ blk={blockInfo.offset} offset={blockDataStart} len={blockDataLen} isEntireBlock={isEntireBlock}"
+
+            # Sanity check
+            if blockDataLen == 0: raiseAssert(fmt"Zero-length block size! offset={offset} length={length} amountFilled={amountFilled} blockOffset={blockOffset} blockDataStart={blockDataStart} blockDataLen={blockDataLen}")
+            if blockOffset == lastBlock and amountFilled > 0: raiseAssert("Block offset is the same as last block.")
+            lastBlock = blockOffset
 
             # Check if allocated
             if blockInfo.state == NBDBlockStateUnallocated:
@@ -232,25 +240,24 @@ class NBDBlockDevice of NBDDevice:
             # Get the block
             var blockOffset = (offset + amountFilled) - ((offset + amountFilled) mod this.blockSize)
             var blockInfo = await this.getBlock(blockOffset, loadData = false)
-
-            # Sanity check
-            if blockOffset == lastBlock and amountFilled > 0: raiseAssert("Block offset is the same as last block.")
-            lastBlock = blockOffset
             
             # Check block range
             let blockDataStart = offset + amountFilled - blockInfo.offset
             let blockDataLen = min(data.len.uint - amountFilled, this.blockSize - blockDataStart)
             let isEntireBlock = blockDataStart == 0 and blockDataLen == this.blockSize
 
-            # If the length is zero, stop
-            if blockDataLen == 0:
-                raiseAssert(fmt"Requested a block write of zero length! blockOffset={blockOffset} blockStart={blockDataStart} blockLen={blockDataLen}")
+            # Sanity check
+            if blockDataLen == 0: raiseAssert(fmt"Zero-length block size! offset={offset} length={data.len} amountFilled={amountFilled} blockOffset={blockOffset} blockDataStart={blockDataStart} blockDataLen={blockDataLen}")
+            if blockOffset == lastBlock and amountFilled > 0: raiseAssert("Block offset is the same as last block.")
+            lastBlock = blockOffset
+
+            # echo fmt"WRITE offset={offset} length={data.len} amountFilled={amountFilled} blockOffset={blockOffset} blockDataStart={blockDataStart} blockDataLen={blockDataLen}"
 
             # Special case: If this data covers the entire block, we don't even need to read the existing data, we can just overwrite it immediately
             if isEntireBlock:
 
                 # Write data immediately, since it covers the whole block
-                blockInfo.data = data[amountFilled ..< amountFilled + this.blockSize()]
+                blockInfo.data = data[amountFilled ..< amountFilled + this.blockSize]
                 blockInfo.isDirty = true
                 amountFilled += this.blockSize
                 continue
@@ -272,6 +279,7 @@ class NBDBlockDevice of NBDDevice:
             blockInfo.data[blockDataStart ..< blockDataStart + blockDataLen] = data[amountFilled ..< amountFilled + blockDataLen]
             blockInfo.isDirty = true
             blockInfo.updateNonce += 1
+            blockInfo.flushDate = cpuTime() + AutoFlushDelay
             amountFilled += this.blockSize
 
 
@@ -286,15 +294,16 @@ class NBDBlockDevice of NBDDevice:
             # Get the block
             var blockOffset = (offset + amountFilled) - ((offset + amountFilled) mod this.blockSize)
             var blockInfo = await this.getBlock(blockOffset, loadData = false)
-
-            # Sanity check
-            if blockOffset == lastBlock and amountFilled > 0: raiseAssert("Block offset is the same as last block.")
-            lastBlock = blockOffset
             
             # Check block range
             let blockDataStart = offset + amountFilled - blockInfo.offset
             let blockDataLen = min(length.uint - amountFilled, this.blockSize - blockDataStart)
             let isEntireBlock = blockDataStart == 0 and blockDataLen == this.blockSize
+
+            # Sanity check
+            if blockDataLen == 0: raiseAssert(fmt"Zero-length block size! offset={offset} length={length} amountFilled={amountFilled} blockOffset={blockOffset} blockDataStart={blockDataStart} blockDataLen={blockDataLen}")
+            if blockOffset == lastBlock and amountFilled > 0: raiseAssert("Block offset is the same as last block.")
+            lastBlock = blockOffset
 
             # If the length is zero, stop
             if blockDataLen == 0:
@@ -325,6 +334,7 @@ class NBDBlockDevice of NBDDevice:
             blockInfo.data[blockDataStart ..< blockDataStart + blockDataLen] = newString(blockDataLen, filledWith = 0)
             blockInfo.isDirty = true
             blockInfo.updateNonce += 1
+            blockInfo.flushDate = cpuTime() + AutoFlushDelay
             amountFilled += this.blockSize
 
 
@@ -343,6 +353,7 @@ class NBDBlockDevice of NBDDevice:
             let blockDataLen = min(length.uint - amountFilled, this.blockSize - blockDataStart)
 
             # Sanity check
+            if blockDataLen == 0: raiseAssert(fmt"Zero-length block size! offset={offset} length={length} amountFilled={amountFilled} blockOffset={blockOffset} blockDataStart={blockDataStart} blockDataLen={blockDataLen}")
             if blockOffset == lastBlock and amountFilled > 0: raiseAssert("Block offset is the same as last block.")
             lastBlock = blockOffset
             amountFilled += blockDataLen
@@ -370,6 +381,7 @@ class NBDBlockDevice of NBDDevice:
             let blockDataLen = min(length.uint - amountFilled, this.blockSize - blockDataStart)
 
             # Sanity check
+            if blockDataLen == 0: raiseAssert("Zero-length block size!")
             if blockOffset == lastBlock and amountFilled > 0: raiseAssert(fmt"Block offset is the same as last block. offset={offset} length={length} blockOffset={blockOffset} lastBlock={lastBlock} amountFilled={amountFilled} blockDataStart={blockDataStart} blockDataLen={blockDataLen}")
             lastBlock = blockOffset
             amountFilled += blockDataLen
@@ -497,9 +509,7 @@ class NBDBlockDevice of NBDDevice:
             await this.cleanupDirtyBlocks()
 
             # Trim memory
-            let isOverMemory = this.memoryInUse > this.desiredMemorySize
-            if isOverMemory:
-                await this.cleanupTrimMemory()
+            await this.cleanupTrimMemory()
 
             # If there are no dirty blocks and data in memory is below the threshold, we can stop this loop
             if not this.hasUnstableBlocks:
@@ -518,9 +528,10 @@ class NBDBlockDevice of NBDDevice:
             return
 
         # Get next dirty block
+        let now = cpuTime()
         var dirtyBlock : NBDBlock = nil
         for b in this.blockCache:
-            if b.isDirty and not b.isSaving:
+            if b.isDirty and not b.isSaving and b.flushDate < now:
                 dirtyBlock = b
                 break
 
@@ -584,11 +595,17 @@ class NBDBlockDevice of NBDDevice:
         # Find the oldest clean block
         var oldestBlock : NBDBlock = nil
         var oldestBlockIdx = 0
+        var memorySize = 0u
         for i, b in this.blockCache:
-            if not b.isDirty and not b.isLoading and not b.isSaving:
+            memorySize += b.data.len.uint64
+            if not b.isDirty and not b.isLoading and not b.isSaving and b.data.len > 0:
                 if oldestBlock == nil or b.lastAccess < oldestBlock.lastAccess:
                     oldestBlock = b
                     oldestBlockIdx = i
+
+        # Stop if memory usage is below the threshold
+        if memorySize < this.desiredMemorySize:
+            return
 
         # Stop if no clean blocks to remove
         if oldestBlock == nil:
@@ -604,7 +621,38 @@ class NBDBlockDevice of NBDDevice:
 
     ## Flush changes to permanent storage. Default implementation does nothing.
     method flush() {.async.} = 
+
+        # Mark all blocks with a zero flush date, so they can be saved immediately
+        for b in this.blockCache:
+            b.flushDate = 0.0
     
         # Wait for all blocks to stop being dirty
         while this.hasDirtyBlocks:
             await sleepAsync(1)
+
+
+
+    ## Fetch debug stats for this device
+    method debugStats() : string =
+
+        # Get stats
+        var blocks = this.blockCache.len
+        var cached = 0
+        var dirty = 0
+        var saving = 0
+        var loading = 0
+        for blk in this.blockCache:
+            if blk.data.len > 0: cached += 1
+            if blk.isDirty: dirty += 1
+            if blk.isSaving: saving += 1
+            if blk.isLoading: loading += 1
+
+        # Build string
+        var str = "blocks=" & $blocks
+        if cached > 0: str &= " cached=" & $cached
+        if dirty > 0: str &= " dirty=" & $dirty
+        if saving > 0: str &= " saving=" & $saving
+        if loading > 0: str &= " loading=" & $loading
+
+        # Done
+        return str
