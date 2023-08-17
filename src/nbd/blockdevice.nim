@@ -2,7 +2,9 @@ import std/asyncdispatch
 import std/times
 import std/strformat
 import stdx/sequtils
+import stdx/strutils
 import classes
+import elvis
 import ./nbd_classes
 
 ##
@@ -18,11 +20,8 @@ type NBDBlockState* = enum
     ## Data exists in permanent storage but hasn't been loaded yet
     NBDBlockStateUnloaded
 
-    ## Data has been saved to storage and hasn't been touched since
-    NBDBlockStateClean
-
-    ## Data has not yet been written to storage
-    NBDBlockStateDirty
+    ## Data is loaded
+    NBDBlockStateLoaded
 
 ##
 ## A single block on the device
@@ -32,7 +31,7 @@ class NBDBlock:
     var offset : uint64 = 0
 
     ## Block data, can be 0 length if the block hasn't been loaded into memory yet
-    var data : seq[uint8]
+    var data : string
 
     ## Write nonce, this increases each time the block is modified. This is used to check if
     ## a block was modified while it was being saved.
@@ -52,6 +51,9 @@ class NBDBlock:
 
     ## True if currently saving
     var isSaving = false
+
+    ## True if the block is dirty, ie hasn't been written back to permanent storage yet
+    var isDirty = false
 
 
 
@@ -88,10 +90,10 @@ class NBDBlockDevice of NBDDevice:
     method blockExists(offset : uint64) : Future[bool] {.async.} = raiseAssert("You must implement the blockExists() method in your subclass.")
 
     ## Read a block from permanent storage
-    method readBlock(offset : uint64) : Future[seq[uint8]] {.async.} = raiseAssert("You must implement the readBlock() method in your subclass.")
+    method readBlock(offset : uint64) : Future[string] {.async.} = raiseAssert("You must implement the readBlock() method in your subclass.")
 
     ## Write a block to permanent storage
-    method writeBlock(offset : uint64, data : seq[uint8]) : Future[void] {.async.} = raiseAssert("You must implement the writeBlock() method in your subclass.")
+    method writeBlock(offset : uint64, data : string) : Future[void] {.async.} = raiseAssert("You must implement the writeBlock() method in your subclass.")
 
     ## Delete a block from permanent storage
     method deleteBlock(offset : uint64) : Future[void] {.async.} = raiseAssert("You must implement the deleteBlock() method in your subclass.")
@@ -153,25 +155,21 @@ class NBDBlockDevice of NBDDevice:
                 let data = await this.readBlock(blk.offset)
                 if data.len.uint64 != this.blockSize: raise newException(IOError, fmt"Wrong block size returned from readBlock(). Expected {this.blockSize} bytes, got {data.len} bytes.")
                 blk.data = data
-                blk.state = NBDBlockStateClean
+                blk.state = NBDBlockStateLoaded
+                blk.isDirty = false
             except:
                 blk.state = NBDBlockStateUnloaded
+                blk.isDirty = false
                 raise getCurrentException()
             finally:
                 blk.isLoading = false
 
         # Sanity check: At this point, we should only ever have certain states
         if blk.isLoading: raiseAssert("Block is still loading, but it shouldn't be at this point.")
-        if blk.state == NBDBlockStateClean and blk.data.len.uint64 != this.blockSize: raiseAssert("Block is clean, but data is missing.")
-        if blk.state == NBDBlockStateDirty and blk.data.len.uint64 != this.blockSize: raiseAssert("Block is dirty, but data is missing.")
-        if loadData:
-            if blk.state != NBDBlockStateClean and blk.state != NBDBlockStateDirty and blk.state != NBDBlockStateUnallocated: 
-                echo blk.repr
-                raiseAssert("Invalid block state found.")
-        else:
-            if blk.state != NBDBlockStateClean and blk.state != NBDBlockStateDirty and blk.state != NBDBlockStateUnallocated and blk.state != NBDBlockStateUnloaded:
-                echo blk.repr
-                raiseAssert("Invalid block state found.")
+        if blk.state == NBDBlockStateUnknown: raiseAssert("Block is in unknown state, but it shouldn't be at this point.")
+        if blk.state != NBDBlockStateLoaded and blk.data.len != 0: raiseAssert("Block is unloaded, but data was found.")
+        if blk.state == NBDBlockStateLoaded and blk.data.len.uint64 != this.blockSize: raiseAssert("Block is loaded, but data is missing.")
+        if loadData and blk.state == NBDBlockStateUnloaded: raiseAssert("Block was expected to be loaded at this point.")
 
         # Increment block stats
         blk.accessCounter += 1
@@ -182,10 +180,10 @@ class NBDBlockDevice of NBDDevice:
 
 
     ## Read data from the device
-    method read(offset : uint64, length : uint32) : Future[seq[uint8]] {.async.} =
+    method read(offset : uint64, length : uint32) : Future[string] {.async.} =
     
         # Create memory
-        var data : seq[uint8]
+        var data : string
 
         # Go through each block until data is filled
         var amountFilled = 0u
@@ -203,7 +201,7 @@ class NBDBlockDevice of NBDDevice:
             if blockInfo.state == NBDBlockStateUnallocated:
 
                 # Add zeroes
-                data.add(newSeq[uint8](blockDataLen))
+                data.add(newString(blockDataLen, filledWith = 0))
                 amountFilled += blockDataLen
                 continue
 
@@ -225,7 +223,7 @@ class NBDBlockDevice of NBDDevice:
 
 
     ## Write data to the device
-    method write(offset : uint64, data : seq[uint8]) {.async.} =
+    method write(offset : uint64, data : string) {.async.} =
     
         # Go through all data
         var amountFilled = 0u
@@ -248,7 +246,7 @@ class NBDBlockDevice of NBDDevice:
 
                 # Write data immediately, since it covers the whole block
                 blockInfo.data = data[amountFilled ..< amountFilled + this.blockSize()]
-                blockInfo.state = NBDBlockStateDirty
+                blockInfo.isDirty = true
                 amountFilled += this.blockSize
                 continue
 
@@ -257,16 +255,64 @@ class NBDBlockDevice of NBDDevice:
 
             # If block is unallocated, create zero data
             if blockInfo.state == NBDBlockStateUnallocated:
-                blockInfo.data = newSeq[uint8](this.blockSize.int)
-                blockInfo.state = NBDBlockStateClean
+                blockInfo.data = newString(this.blockSize.int, filledWith = 0)
+                blockInfo.isDirty = false
+                blockInfo.state = NBDBlockStateLoaded
 
             # Sanity checks
-            if blockInfo.state != NBDBlockStateClean and blockInfo.state != NBDBlockStateDirty: raiseAssert(fmt"Block in memory is in an invalid state! Expected Clean or Dirty, got {blockInfo.state}.")
+            if blockInfo.state != NBDBlockStateLoaded: raiseAssert(fmt"Block in memory is in an invalid state! Expected it to be loaded, got {blockInfo.state}.")
             if blockInfo.data.len != this.blockSize.int: raiseAssert(fmt"Block in memory is the wrong size! Expected {this.blockSize} bytes, got {blockInfo.data.len} bytes. State is {blockInfo.state}.")
 
             # Copy region of source data into the block data
             blockInfo.data[blockDataStart ..< blockDataStart + blockDataLen] = data[amountFilled ..< amountFilled + blockDataLen]
-            blockInfo.state = NBDBlockStateDirty
+            blockInfo.isDirty = true
+            blockInfo.updateNonce += 1
+            amountFilled += this.blockSize
+
+
+    ## Write zero data to the device
+    method writeZeroes(offset : uint64, length : uint32) {.async.} =
+    
+        # Go through all data
+        var amountFilled = 0u
+        for blockOffset in blockOffsetsForRange(offset, length.uint, this.blockSize):
+
+            # Get the block
+            var blockInfo = await this.getBlock(blockOffset, loadData = false)
+            
+            # Check block range
+            let blockDataStart = offset + amountFilled - blockInfo.offset
+            let blockDataLen = min(length.uint - amountFilled, this.blockSize - blockDataStart)
+            let isEntireBlock = blockDataStart == 0 and blockDataLen == this.blockSize
+
+            # If the length is zero, stop
+            if blockDataLen == 0:
+                raiseAssert(fmt"Requested a block write of zero length! blockOffset={blockOffset} blockStart={blockDataStart} blockLen={blockDataLen}")
+
+            # Special case: If this data covers the entire block, we don't even need to read the existing data, we can just overwrite it immediately
+            if isEntireBlock:
+
+                # Unallocate block
+                blockInfo.data = ""
+                blockInfo.state = NBDBlockStateUnallocated
+                blockInfo.isDirty = true
+                amountFilled += this.blockSize
+                continue
+
+            # If block is unloaded, load it
+            blockInfo = await this.getBlock(blockOffset, loadData = true)
+
+            # If block is unallocated already, just stop
+            if blockInfo.state == NBDBlockStateUnallocated:
+                continue
+
+            # Sanity checks
+            if blockInfo.state != NBDBlockStateLoaded: raiseAssert(fmt"Block in memory is in an invalid state! Expected it to be loaded, got {blockInfo.state}.")
+            if blockInfo.data.len != this.blockSize.int: raiseAssert(fmt"Block in memory is the wrong size! Expected {this.blockSize} bytes, got {blockInfo.data.len} bytes. State is {blockInfo.state}.")
+
+            # Copy region of source data into the block data
+            blockInfo.data[blockDataStart ..< blockDataStart + blockDataLen] = newString(blockDataLen, filledWith = 0)
+            blockInfo.isDirty = true
             blockInfo.updateNonce += 1
             amountFilled += this.blockSize
 
@@ -310,7 +356,7 @@ class NBDBlockDevice of NBDDevice:
             # Check if block is all zeroes
             # TODO: Optimize this by using uint64 types and aligning it to 8 bytes
             for i in 0 ..< blockInfo.data.len:
-                if blockInfo.data[i] != 0:
+                if blockInfo.data[i] != 0.char:
                     return false
 
         # All is zero
@@ -335,7 +381,7 @@ class NBDBlockDevice of NBDDevice:
         var memoryInUse : uint64 = 0
         for blk in this.blockCache:
             memoryInUse += blk.data.len.uint64
-            if blk.isLoading or blk.isSaving or blk.state == NBDBlockStateDirty:
+            if blk.isLoading or blk.isSaving or blk.isDirty:
                 return true
 
         # True if we're over memory usage, since those blocks will be removed soon
@@ -358,7 +404,7 @@ class NBDBlockDevice of NBDDevice:
     ## True if there are dirty blocks
     method hasDirtyBlocks() : bool =
         for blk in this.blockCache:
-            if blk.state == NBDBlockStateDirty:
+            if blk.isDirty:
                 return true
         return false
 
@@ -367,7 +413,7 @@ class NBDBlockDevice of NBDDevice:
     method currentUnstableBlocks() : int =
         var ops = 0
         for blk in this.blockCache:
-            if blk.isLoading or blk.isSaving or blk.state == NBDBlockStateDirty:
+            if blk.isLoading or blk.isSaving or blk.isDirty:
                 ops += 1
         return ops
 
@@ -443,7 +489,7 @@ class NBDBlockDevice of NBDDevice:
         # Get next dirty block
         var dirtyBlock : NBDBlock = nil
         for b in this.blockCache:
-            if b.state == NBDBlockStateDirty and not b.isSaving:
+            if b.isDirty and not b.isSaving:
                 dirtyBlock = b
                 break
 
@@ -459,11 +505,10 @@ class NBDBlockDevice of NBDDevice:
     method saveDirtyBlock(dirtyBlock : NBDBlock) {.async.} =
 
         # Sanity check
-        if dirtyBlock.state == NBDBlockStateClean: return
-        if dirtyBlock.state != NBDBlockStateDirty: raiseAssert("Tried to save a block in an invalid state.")
+        if not dirtyBlock.isDirty: return
 
         # Write block to permanent storage
-        let allZero = dirtyBlock.data.allZero()
+        let allZero = dirtyBlock.state == NBDBlockStateUnallocated ? true ! dirtyBlock.data.allZero()
         let updateNonce = dirtyBlock.updateNonce
         try:
 
@@ -494,11 +539,10 @@ class NBDBlockDevice of NBDDevice:
         # Mark block as clean now, or unallocated if the block was deleted
         if allZero:
             dirtyBlock.state = NBDBlockStateUnallocated
-            dirtyBlock.data = newSeq[uint8](0)
-        else:
-            dirtyBlock.state = NBDBlockStateClean
+            dirtyBlock.data = ""
 
         # Update access stats
+        dirtyBlock.isDirty = false
         dirtyBlock.updateNonce += 1
         dirtyBlock.lastAccess = cpuTime()
 
@@ -510,7 +554,7 @@ class NBDBlockDevice of NBDDevice:
         var oldestBlock : NBDBlock = nil
         var oldestBlockIdx = 0
         for i, b in this.blockCache:
-            if (b.state == NBDBlockStateClean) and not b.isLoading and not b.isSaving:
+            if not b.isDirty and not b.isLoading and not b.isSaving:
                 if oldestBlock == nil or b.lastAccess < oldestBlock.lastAccess:
                     oldestBlock = b
                     oldestBlockIdx = i
@@ -520,11 +564,8 @@ class NBDBlockDevice of NBDDevice:
             # echo "No trimmable blocks found..."
             return
 
-        # Sanity checks
-        if oldestBlock.state != NBDBlockStateClean: raiseAssert("Tried to remove a block in an invalid state.")
-
         # Remove block from memory
         # echo "[NBDBlockDevice] Removing clean block from memory: ", oldestBlock.offset
-        oldestBlock.data = newSeq[uint8](0)
+        oldestBlock.data = ""
         oldestBlock.state = NBDBlockStateUnloaded
         

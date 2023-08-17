@@ -1,4 +1,5 @@
 import std/asyncdispatch
+import std/asyncnet
 import std/strformat
 import stdx/strutils
 import elvis
@@ -7,8 +8,8 @@ import ./nbd_classes
 import ./utils
 
 ## Send an option reply
-proc sendOptionReply(connection : NBDConnection, option : uint, replyType : uint, data : seq[uint8] = newSeq[uint8](0)) {.async.} =
-    var packet : seq[uint8]
+proc sendOptionReply(connection : NBDConnection, option : uint, replyType : uint, data : string = "") {.async.} =
+    var packet : string
     packet.add(0x3e889045565a9u.uint64)
     packet.add(option.uint32)
     packet.add(replyType.uint32)
@@ -46,7 +47,7 @@ proc matchDevice(devices : seq[NBDDeviceInfo], name : string) : NBDDeviceInfo =
 proc handleNextOption(connection : NBDConnection, devices : seq[NBDDeviceInfo]) : Future[NBDDeviceInfo] {.async.} =
 
     # Read next message header
-    var header = await connection.socket.recvFixedLengthString(8)
+    var header = await connection.socket.recvFixedLengthData(8)
     if header != "IHAVEOPT":
         raise newException(IOError, fmt"Invalid message header, expected IHAVEOPT but got something else instead.")
 
@@ -74,7 +75,7 @@ proc handleNextOption(connection : NBDConnection, devices : seq[NBDDeviceInfo]) 
     if option == NBD_OPT_EXPORT_NAME:
 
         # Get export name
-        var exportName = data.toString()
+        var exportName = data
         var exportDisplayName = exportName ?: "(default)"
         connection.log(fmt"Client wants to access the device: '{exportDisplayName}' (using the old NBD_OPT_EXPORT_NAME)")
 
@@ -113,9 +114,9 @@ proc handleNextOption(connection : NBDConnection, devices : seq[NBDDeviceInfo]) 
                 continue
 
             # Send device info packet
-            var data : seq[uint8]
+            var data : string
             data.add(device.name.len.uint32.toBytes())
-            data.add(device.name.toBytes())
+            data.add(device.name)
             await connection.sendOptionReply(option, NBD_REP_SERVER, data)
 
         # Done
@@ -144,7 +145,7 @@ proc handleNextOption(connection : NBDConnection, devices : seq[NBDDeviceInfo]) 
         offset += 4
 
         # Get export name
-        var name = data[offset ..< offset + nameLen.int].toString()
+        var name = data[offset ..< offset + nameLen.int]
         offset += nameLen.int
 
         # log it
@@ -166,22 +167,22 @@ proc handleNextOption(connection : NBDConnection, devices : seq[NBDDeviceInfo]) 
         if deviceInfo.isReadOnly: flags = flags or NBD_FLAG_READ_ONLY
 
         # Send NBD_INFO_EXPORT (device size in bytes)
-        var packet : seq[uint8]
+        var packet : string
         packet.add(NBD_INFO_EXPORT.uint16.toBytes())
         packet.add(deviceInfo.size.uint64.toBytes())
         packet.add(flags.uint16.toBytes())
         await connection.sendOptionReply(option, NBD_REP_INFO, packet)
 
         # Send NBD_INFO_NAME (device name)
-        packet = @[]
+        packet = ""
         packet.add(NBD_INFO_NAME.uint16.toBytes())
-        packet.add(deviceInfo.name.toBytes())
+        packet.add(deviceInfo.name)
         await connection.sendOptionReply(option, NBD_REP_INFO, packet)
 
         # Send NBD_INFO_DESCRIPTION (device description)
-        packet = @[]
+        packet = ""
         packet.add(NBD_INFO_DESCRIPTION.uint16.toBytes())
-        packet.add(deviceInfo.displayDescription.toBytes())
+        packet.add(deviceInfo.displayDescription)
         await connection.sendOptionReply(option, NBD_REP_INFO, packet)
 
         # Get preferred block sizes
@@ -190,7 +191,7 @@ proc handleNextOption(connection : NBDConnection, devices : seq[NBDDeviceInfo]) 
         const maxBlockSize          = 1024u * 1024u * 8u
 
         # Send NBD_INFO_BLOCK_SIZE (block size)
-        packet = @[]
+        packet = ""
         packet.add(NBD_INFO_BLOCK_SIZE.uint16.toBytes())
         packet.add(minBlockSize.uint32.toBytes())
         packet.add(preferredBlockSize.uint32.toBytes())
@@ -219,7 +220,7 @@ proc handleNextOption(connection : NBDConnection, devices : seq[NBDDeviceInfo]) 
         offset += 4
 
         # Get export name
-        var name = data[offset ..< offset + nameLen.int].toString()
+        var name = data[offset ..< offset + nameLen.int]
         offset += nameLen.int
 
         # Find device, or fail if not found
@@ -240,9 +241,9 @@ proc handleNextOption(connection : NBDConnection, devices : seq[NBDDeviceInfo]) 
         for context in contexts:
 
             # Send context info packet
-            var data : seq[uint8]
+            var data : string
             data.add(context.len.uint32.toBytes())
-            data.add(context.toBytes())
+            data.add(context)
             await connection.sendOptionReply(option, NBD_REP_META_CONTEXT, data)
 
         # Done
@@ -263,7 +264,7 @@ proc handleNextOption(connection : NBDConnection, devices : seq[NBDDeviceInfo]) 
         offset += 4
 
         # Get export name
-        var name = data[offset ..< offset + nameLen.int].toString()
+        var name = data[offset ..< offset + nameLen.int]
         offset += nameLen.int
 
         # Find device, or fail if not found
@@ -285,7 +286,7 @@ proc handleNextOption(connection : NBDConnection, devices : seq[NBDDeviceInfo]) 
             offset += 4
 
             # Get context name
-            let context = data[offset ..< offset + contextLen.int].toString()
+            let context = data[offset ..< offset + contextLen.int]
             offset += contextLen.int
 
             # Check context
@@ -300,9 +301,9 @@ proc handleNextOption(connection : NBDConnection, devices : seq[NBDDeviceInfo]) 
                 let contextID = connection.metadataContexts.find(context)
 
                 # Send reply
-                var data : seq[uint8]
+                var data : string
                 data.add(contextID.uint32.toBytes())        # <-- Unique context ID, we're using the offset into the connection.metadataContexts array
-                data.add(context.toBytes())
+                data.add(context)
                 await connection.sendOptionReply(option, NBD_REP_META_CONTEXT, data)
 
             else:

@@ -43,7 +43,7 @@ class ZDFileDisk of ZDDevice:
 
 
     ## Read a block from permanent storage
-    method readBlock(offset : uint64) : Future[seq[uint8]] {.async.} =
+    method readBlock(offset : uint64) : Future[string] {.async.} =
 
         # Open file
         let path = this.folder / "blocks" / ($offset & ".blk")
@@ -55,7 +55,7 @@ class ZDFileDisk of ZDDevice:
 
 
     ## Write a block to permanent storage
-    method writeBlock(offset : uint64, data : seq[uint8]) : Future[void] {.async.} =
+    method writeBlock(offset : uint64, data : string) : Future[void] {.async.} =
     
         # Remove existing block
         for i in 0 ..< this.blocks.len:

@@ -15,77 +15,77 @@ proc `+`*(a: pointer, b: int): pointer =
 
 
 ## Convert a 16-bit integer to bytes
-proc toBytes*(value : uint16, desiredEndianness : Endianness = bigEndian) : array[2, uint8] = 
+proc toBytes*(value : uint16, desiredEndianness : Endianness = bigEndian) : string = 
 
     # Create buffer for the data
-    var data : array[2, uint8]
+    var data = newString(2)
 
     # Check endianness
     if desiredEndianness == littleEndian:
-        data[0] = (value shr 0 and 0xFF).uint8
-        data[1] = (value shr 8 and 0xFF).uint8
+        data[0] = (value shr 0 and 0xFF).char
+        data[1] = (value shr 8 and 0xFF).char
     else:
-        data[0] = (value shr 8 and 0xFF).uint8
-        data[1] = (value shr 0 and 0xFF).uint8
+        data[0] = (value shr 8 and 0xFF).char
+        data[1] = (value shr 0 and 0xFF).char
 
     # Return it
     return data
 
 
 ## Convert a 32-bit integer to bytes
-proc toBytes*(value : uint32, desiredEndianness : Endianness = bigEndian) : array[4, uint8] = 
+proc toBytes*(value : uint32, desiredEndianness : Endianness = bigEndian) : string = 
 
     # Create buffer for the data
-    var data : array[4, uint8]
+    var data = newString(4)
 
     # Check endianness
     if desiredEndianness == littleEndian:
-        data[0] = (value shr 0 and 0xFF).uint8
-        data[1] = (value shr 8 and 0xFF).uint8
-        data[2] = (value shr 16 and 0xFF).uint8
-        data[3] = (value shr 24 and 0xFF).uint8
+        data[0] = (value shr 0 and 0xFF).char
+        data[1] = (value shr 8 and 0xFF).char
+        data[2] = (value shr 16 and 0xFF).char
+        data[3] = (value shr 24 and 0xFF).char
     else:
-        data[0] = (value shr 24 and 0xFF).uint8
-        data[1] = (value shr 16 and 0xFF).uint8
-        data[2] = (value shr 8 and 0xFF).uint8
-        data[3] = (value shr 0 and 0xFF).uint8
+        data[0] = (value shr 24 and 0xFF).char
+        data[1] = (value shr 16 and 0xFF).char
+        data[2] = (value shr 8 and 0xFF).char
+        data[3] = (value shr 0 and 0xFF).char
 
     # Return it
     return data
 
 
 ## Convert a 64-bit integer to bytes
-proc toBytes*(value : uint64, desiredEndianness : Endianness = bigEndian) : array[8, uint8] = 
+proc toBytes*(value : uint64, desiredEndianness : Endianness = bigEndian) : string = 
 
     # Create buffer for the data
-    var data : array[8, uint8]
+    var data = newString(8)
 
     # Check endianness
     if desiredEndianness == littleEndian:
-        data[0] = (value shr 0 and 0xFF).uint8
-        data[1] = (value shr 8 and 0xFF).uint8
-        data[2] = (value shr 16 and 0xFF).uint8
-        data[3] = (value shr 24 and 0xFF).uint8
-        data[4] = (value shr 32 and 0xFF).uint8
-        data[5] = (value shr 40 and 0xFF).uint8
-        data[6] = (value shr 48 and 0xFF).uint8
-        data[7] = (value shr 56 and 0xFF).uint8
+        data[0] = (value shr 0 and 0xFF).char
+        data[1] = (value shr 8 and 0xFF).char
+        data[2] = (value shr 16 and 0xFF).char
+        data[3] = (value shr 24 and 0xFF).char
+        data[4] = (value shr 32 and 0xFF).char
+        data[5] = (value shr 40 and 0xFF).char
+        data[6] = (value shr 48 and 0xFF).char
+        data[7] = (value shr 56 and 0xFF).char
     else:
-        data[0] = (value shr 56 and 0xFF).uint8
-        data[1] = (value shr 48 and 0xFF).uint8
-        data[2] = (value shr 40 and 0xFF).uint8
-        data[3] = (value shr 32 and 0xFF).uint8
-        data[4] = (value shr 24 and 0xFF).uint8
-        data[5] = (value shr 16 and 0xFF).uint8
-        data[6] = (value shr 8 and 0xFF).uint8
-        data[7] = (value shr 0 and 0xFF).uint8
+        data[0] = (value shr 56 and 0xFF).char
+        data[1] = (value shr 48 and 0xFF).char
+        data[2] = (value shr 40 and 0xFF).char
+        data[3] = (value shr 32 and 0xFF).char
+        data[4] = (value shr 24 and 0xFF).char
+        data[5] = (value shr 16 and 0xFF).char
+        data[6] = (value shr 8 and 0xFF).char
+        data[7] = (value shr 0 and 0xFF).char
 
     # Return it
     return data
 
 
 ## Convert an array of bytes to a 16-bit integer
-proc toUint16*(data : openarray[uint8], desiredEndianness : Endianness = bigEndian) : uint16 = 
+proc toUint16*(data : string, desiredEndianness : Endianness = bigEndian) : uint16 = 
 
     # Check length
     if data.len != 2: raise newException(ValueError, "Data must be exactly 2 bytes long.")
@@ -100,7 +100,7 @@ proc toUint16*(data : openarray[uint8], desiredEndianness : Endianness = bigEndi
 
 
 ## Convert an array of bytes to a 32-bit integer
-proc toUint32*(data : openarray[uint8], desiredEndianness : Endianness = bigEndian) : uint32 = 
+proc toUint32*(data : string, desiredEndianness : Endianness = bigEndian) : uint32 = 
 
     # Check length
     if data.len != 4: raise newException(ValueError, "Data must be exactly 4 bytes long.")
@@ -119,7 +119,7 @@ proc toUint32*(data : openarray[uint8], desiredEndianness : Endianness = bigEndi
 
 
 ## Convert an array of bytes to a 64-bit integer
-proc toUint64*(data : openarray[uint8], desiredEndianness : Endianness = bigEndian) : uint64 = 
+proc toUint64*(data : string, desiredEndianness : Endianness = bigEndian) : uint64 = 
 
     # Check length
     if data.len != 8: raise newException(ValueError, "Data must be exactly 8 bytes long.")
@@ -146,48 +146,37 @@ proc toUint64*(data : openarray[uint8], desiredEndianness : Endianness = bigEndi
 
 
 ## Add a 16-bit integer to the data
-proc add*(data : var seq[uint8], value : uint16, desiredEndianness : Endianness = bigEndian) =
+proc add*(data : var string, value : uint16, desiredEndianness : Endianness = bigEndian) =
     data.add(value.toBytes(desiredEndianness))
     
 
 ## Add a 32-bit integer to the data
-proc add*(data : var seq[uint8], value : uint32, desiredEndianness : Endianness = bigEndian) =
+proc add*(data : var string, value : uint32, desiredEndianness : Endianness = bigEndian) =
     data.add(value.toBytes(desiredEndianness))
 
 
 ## Add a 64-bit integer to the data
-proc add*(data : var seq[uint8], value : uint64, desiredEndianness : Endianness = bigEndian) =
+proc add*(data : var string, value : uint64, desiredEndianness : Endianness = bigEndian) =
     data.add(value.toBytes(desiredEndianness))
-
-
-## Add bytes of a string to the data
-proc add*(data : var seq[uint8], value : string) =
-    data.add(value.toBytes())
-
-
-## Send a packet to the socket
-proc send*(socket : AsyncSocket, data : seq[uint8]) : Future[void] {.async.} =
-    var dataPointer = addr data[0]
-    await socket.send(dataPointer, data.len)
             
 
 ## Receive a fixed length of data from the socket. Note this is not efficient for large amounts of data, use `recv()` itself for that.
-proc recvFixedLengthData*(socket : AsyncSocket, length : int) : Future[seq[uint8]] {.async.} =
+proc recvFixedLengthData*(socket : AsyncSocket, length : int) : Future[string] {.async.} =
 
     # Special case: If zero length, just immediately return a blank array
     if length == 0: 
-        return @[]
+        return ""
 
     # Create data
-    var data : seq[uint8]
+    var data : string
 
     # Receive it
-    var buffer : array[1024, uint8]
+    var buffer = newString(1024)
     var amountReceived = 0
     while amountReceived < length:
 
         # Receive batch of data
-        var amt = await socket.recvInto(buffer.addr, min(length - amountReceived, buffer.len))
+        var amt = await socket.recvInto(buffer[0].addr, min(length - amountReceived, buffer.len))
         if amt == 0: raise newException(IOError, "Connection closed unexpectedly.")
 
         # Add it and keep going
@@ -202,12 +191,12 @@ proc recvFixedLengthData*(socket : AsyncSocket, length : int) : Future[seq[uint8
 proc skip*(socket : AsyncSocket, length : uint64) {.async.} =
 
     # Receive it ... we still need to "receive" it, but we'll put it into a throwaway buffer so it doesn't use too much memory during skipping
-    var buffer : array[1024*32, uint8]
+    var buffer = newString(1024*32)
     var amountReceived : uint64 = 0
     while amountReceived < length:
 
         # Receive batch of data
-        var amt = await socket.recvInto(buffer.addr, min(length - amountReceived, buffer.len.uint64).int)
+        var amt = await socket.recvInto(buffer[0].addr, min(length - amountReceived, buffer.len.uint64).int)
         if amt == 0: raise newException(IOError, "Connection closed unexpectedly.")
 
         # Just keep going
@@ -236,13 +225,3 @@ proc recvUint64*(socket : AsyncSocket, incomingEndianness : Endianness = bigEndi
     # Receive it
     var data = await socket.recvFixedLengthData(8)
     return data.toUint64(incomingEndianness)
-            
-
-## Receive a fixed length string from the socket
-proc recvFixedLengthString*(socket : AsyncSocket, length : int) : Future[string] {.async.} =
-
-    # Receive it
-    var data = await socket.recvFixedLengthData(length)
-
-    # Convert to string
-    return data.toString()

@@ -1,6 +1,7 @@
 import std/asyncdispatch
 import std/asyncnet
 import std/strformat
+import stdx/strutils
 import classes
 
 ##
@@ -49,16 +50,16 @@ class NBDDevice:
         return
 
     ## Read data from the device
-    method read(offset : uint64, length : uint32) : Future[seq[uint8]] {.async.} =
+    method read(offset : uint64, length : uint32) : Future[string] {.async.} =
         raise newException(IOError, "Not implemented.")
 
     ## Write data to the device
-    method write(offset : uint64, data : seq[uint8]) {.async.} =
+    method write(offset : uint64, data : string) {.async.} =
         raise newException(IOError, "Not implemented.")
 
     ## Write zeroes to the device. Default implementation just calls write() with zeroes.
     method writeZeroes(offset : uint64, length : uint32) {.async.} =
-        var zeroes = newSeq[uint8](length)
+        var zeroes = newString(length, filledWith = 0)
         await this.write(offset, zeroes)
 
     ## Check if the specified region is a "hole", meaning no data is allocated to that region. Writing data to holes could

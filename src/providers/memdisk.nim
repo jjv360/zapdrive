@@ -1,7 +1,7 @@
 import std/asyncdispatch
 import std/oids
 import std/strformat
-import std/strutils
+import stdx/strutils
 import classes
 import reactive
 import ../nbd
@@ -14,7 +14,7 @@ var LastID = 1
 class ZDMemoryDisk of ZDDevice:
     
     ## Blocks
-    var blocks : seq[tuple[offset : uint64, data : seq[uint8]]]
+    var blocks : seq[tuple[offset : uint64, data : string]]
 
 
     ## Create a new memory disk.
@@ -47,7 +47,7 @@ class ZDMemoryDisk of ZDDevice:
 
 
     ## Read a block from permanent storage
-    method readBlock(offset : uint64) : Future[seq[uint8]] {.async.} =
+    method readBlock(offset : uint64) : Future[string] {.async.} =
 
         # Check blocks
         for blk in this.blocks:
@@ -55,11 +55,11 @@ class ZDMemoryDisk of ZDDevice:
                 return blk.data
 
         # Not found, return blank zeros. Missing blocks are just "holes" of zeros.
-        return newSeq[uint8](this.blockSize)
+        return newString(this.blockSize, filledWith = 0)
 
 
     ## Write a block to permanent storage
-    method writeBlock(offset : uint64, data : seq[uint8]) : Future[void] {.async.} =
+    method writeBlock(offset : uint64, data : string) : Future[void] {.async.} =
     
         # Remove existing block
         for i in 0 ..< this.blocks.len:
@@ -85,4 +85,4 @@ class ZDMemoryDisk of ZDDevice:
     method debugStats() : string =
         let superStats = super.debugStats()
         let memoryUsage = formatSize(this.blocks.len * this.blockSize.int)
-        return fmt"type=mem usage={memoryUsage} {superStats}"
+        return fmt"{superStats} type=mem usage={memoryUsage}"

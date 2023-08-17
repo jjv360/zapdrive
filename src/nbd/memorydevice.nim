@@ -1,4 +1,5 @@
 import std/asyncdispatch
+import stdx/strutils
 import classes
 import ./nbd_classes
 
@@ -7,19 +8,19 @@ import ./nbd_classes
 class NBDMemoryDevice of NBDDevice:
 
     ## The memory
-    var memory : seq[uint8]
+    var memory : string
 
     ## Constructor
     method init(info : NBDDeviceInfo) =
         super.init(info)
-        this.memory = newSeq[uint8](info.size)
+        this.memory = newString(info.size, filledWith = 0)
 
     ## Read data from the device
-    method read(offset : uint64, length : uint32) : Future[seq[uint8]] {.async.} =
+    method read(offset : uint64, length : uint32) : Future[string] {.async.} =
         return this.memory[offset ..< offset + length]
 
     ## Write data to the device
-    method write(offset : uint64, data : seq[uint8]) {.async.} =
+    method write(offset : uint64, data : string) {.async.} =
         this.memory[offset ..< offset + data.len.uint64] = data
 
     ## Check for zeroes in the data
@@ -27,7 +28,7 @@ class NBDMemoryDevice of NBDDevice:
 
         # Check each byte, stop if a non-zero is found
         for i in offset ..< offset + length:
-            if this.memory[i] != 0:
+            if this.memory[i].int != 0:
                 return false
 
         # No non-zero found

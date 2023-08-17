@@ -1,6 +1,7 @@
 import std/asyncdispatch
 import std/asyncnet
 import std/strformat
+import stdx/sequtils
 import ./constants
 import ./nbd_classes
 import ./utils
@@ -11,8 +12,8 @@ const NBDServerMaxChunkSize = 1024u * 1024u * 16u
 
 
 ## Send a command reply in the simple format
-proc sendTransmissionSimpleReply(connection : NBDConnection, cookie : uint64, errorCode : uint32, data : seq[uint8] = newSeq[uint8](0)) {.async.} =
-    var packet : seq[uint8]
+proc sendTransmissionSimpleReply(connection : NBDConnection, cookie : uint64, errorCode : uint32, data : string = "") {.async.} =
+    var packet : string
     packet.add(NBD_SIMPLE_REPLY_MAGIC)
     packet.add(errorCode)
     packet.add(cookie)
@@ -21,8 +22,8 @@ proc sendTransmissionSimpleReply(connection : NBDConnection, cookie : uint64, er
 
 
 ## Send a command reply chunk in the structured format
-proc sendTransmissionStructuredReplyChunk(connection : NBDConnection, cookie : uint64, errorCode : uint32, flags : uint16, replyType : uint16, data : seq[uint8] = newSeq[uint8](0)) {.async.} =
-    var packet : seq[uint8]
+proc sendTransmissionStructuredReplyChunk(connection : NBDConnection, cookie : uint64, errorCode : uint32, flags : uint16, replyType : uint16, data : string = "") {.async.} =
+    var packet : string
     packet.add(NBD_STRUCTURED_REPLY_MAGIC)
     packet.add(flags)
     packet.add(replyType)
@@ -33,7 +34,7 @@ proc sendTransmissionStructuredReplyChunk(connection : NBDConnection, cookie : u
 
 
 ## Send a simple non-chunked reply in whatever format the client requested
-proc sendTransmissionReply(connection : NBDConnection, cookie : uint64, errorCode : uint32 = 0, replyType : uint16 = NBD_REPLY_TYPE_NONE, data : seq[uint8] = newSeq[uint8](0)) {.async.} =
+proc sendTransmissionReply(connection : NBDConnection, cookie : uint64, errorCode : uint32 = 0, replyType : uint16 = NBD_REPLY_TYPE_NONE, data : string = "") {.async.} =
 
     # Check connection type
     if connection.structuredReplies:
@@ -49,7 +50,7 @@ proc sendTransmissionReply(connection : NBDConnection, cookie : uint64, errorCod
 
 ##
 ## Handles an async read request
-proc handleReadCommandImpl(connection : NBDConnection, commandFlags : uint16, commandType : uint16, cookie : uint64, requestOffset: uint64, requestLength : uint32, requestData : seq[uint8]) {.async.} =
+proc handleReadCommandImpl(connection : NBDConnection, commandFlags : uint16, commandType : uint16, cookie : uint64, requestOffset: uint64, requestLength : uint32, requestData : string) {.async.} =
 
     # Check if can chunk reads
     let canChunkReads = connection.structuredReplies and (commandFlags and NBD_CMD_FLAG_DF) == 0
@@ -73,14 +74,14 @@ proc handleReadCommandImpl(connection : NBDConnection, commandFlags : uint16, co
 
         # If all zeroes, send that if supported
         if isZero and connection.structuredReplies:
-            var packet : seq[uint8] 
+            var packet : string
             packet.add(requestOffset.uint64)
             packet.add(requestLength.uint32)
             await connection.sendTransmissionReply(cookie, errorCode = 0, replyType = NBD_REPLY_TYPE_OFFSET_HOLE, packet)
             return
         
         # Read data
-        var data : seq[uint8]
+        var data : string
         try:
             data = await connection.device.read(requestOffset, requestLength)
             if data.len.uint32 != requestLength: raise newException(IOError, "Returned data was not the correct length. Got length " & $data.len)
@@ -93,7 +94,7 @@ proc handleReadCommandImpl(connection : NBDConnection, commandFlags : uint16, co
         if connection.structuredReplies:
 
             # Send a structured reply
-            var packet : seq[uint8]
+            var packet : string
             packet.add(requestOffset.uint64)
             packet.add(data)
             await connection.sendTransmissionStructuredReplyChunk(cookie, errorCode = 0, replyType = NBD_REPLY_TYPE_OFFSET_DATA, flags = NBD_REPLY_FLAG_DONE, packet)
@@ -112,21 +113,14 @@ proc handleReadCommandImpl(connection : NBDConnection, commandFlags : uint16, co
 
 ##
 ## Handles an async write request
-proc handleWriteCommandImpl(connection : NBDConnection, commandFlags : uint16, commandType : uint16, cookie : uint64, requestOffset: uint64, requestLength : uint32, requestData : seq[uint8]) {.async.} =
-
-    # Check if data is all zeroes
-    var isZero = true
-    for i in 0 ..< requestData.len:
-        if requestData[i] != 0:
-            isZero = false
-            break
+proc handleWriteCommandImpl(connection : NBDConnection, commandFlags : uint16, commandType : uint16, cookie : uint64, requestOffset: uint64, requestLength : uint32, requestData : string = "") {.async.} =
 
     # Client wants to write data
     # connection.log(fmt"Client requested a write of {requestLength} bytes.")
     try:
 
         # Check if zeroes
-        if isZero:
+        if requestData.allZero:
             await connection.device.writeZeroes(requestOffset, requestLength)
         else:
             await connection.device.write(requestOffset, requestData)
@@ -144,7 +138,7 @@ proc handleWriteCommandImpl(connection : NBDConnection, commandFlags : uint16, c
 
 ##
 ## Handle a single command
-proc handleCommandImpl(connection : NBDConnection, commandFlags : uint16, commandType : uint16, cookie : uint64, requestOffset: uint64, requestLength : uint32, requestData : seq[uint8]) {.async.} =
+proc handleCommandImpl(connection : NBDConnection, commandFlags : uint16, commandType : uint16, cookie : uint64, requestOffset: uint64, requestLength : uint32, requestData : string) {.async.} =
 
     # Check command type
     if commandType == NBD_CMD_READ:
@@ -258,7 +252,7 @@ proc handleCommandImpl(connection : NBDConnection, commandFlags : uint16, comman
         if isZero: regionFlags = regionFlags or NBD_STATE_ZERO
 
         # Create output data
-        var packet : seq[uint8]
+        var packet : string
         packet.add(contextID.uint32)
         packet.add(requestLength.uint32)
         packet.add(regionFlags.uint32)
@@ -274,7 +268,7 @@ proc handleCommandImpl(connection : NBDConnection, commandFlags : uint16, comman
 
 ##
 ## Handle a single command
-proc handleCommand(connection : NBDConnection, commandFlags : uint16, commandType : uint16, cookie : uint64, requestOffset: uint64, requestLength : uint32, requestData : seq[uint8]) {.async.} = 
+proc handleCommand(connection : NBDConnection, commandFlags : uint16, commandType : uint16, cookie : uint64, requestOffset: uint64, requestLength : uint32, requestData : string) {.async.} = 
 
     # Catch all uncaught errors
     # try:
@@ -324,7 +318,7 @@ proc handleTransmissionPhase*(connection : NBDConnection) {.async.} =
         let requestLength = await connection.socket.recvUint32()
 
         # Get data for write requests
-        var requestData : seq[uint8]
+        var requestData : string
         if commandType == NBD_CMD_WRITE:
             if requestLength > NBDServerMaxChunkSize: raise newException(IOError, "Client requested a write of a chunk that is too big.")
             requestData = await connection.socket.recvFixedLengthData(requestLength.int)

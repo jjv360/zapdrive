@@ -95,7 +95,7 @@ class NBDServer:
             await connection.onConnectionStart()
 
             # Send the initial handshake
-            var packet : seq[uint8]
+            var packet : string
             packet.add("NBDMAGIC")
             packet.add("IHAVEOPT")
 
