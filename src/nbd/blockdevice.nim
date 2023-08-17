@@ -599,4 +599,12 @@ class NBDBlockDevice of NBDDevice:
         # echo "[NBDBlockDevice] Removing clean block from memory: ", oldestBlock.offset
         oldestBlock.data = ""
         oldestBlock.state = NBDBlockStateUnloaded
+
         
+
+    ## Flush changes to permanent storage. Default implementation does nothing.
+    method flush() {.async.} = 
+    
+        # Wait for all blocks to stop being dirty
+        while this.hasDirtyBlocks:
+            await sleepAsync(1)
