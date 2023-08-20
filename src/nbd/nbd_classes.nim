@@ -38,8 +38,8 @@ class NBDDevice:
     ## Device name
     var info : NBDDeviceInfo
 
-    ## True if currently connected
-    var connected = false
+    ## List of active connections to this device (NBDConnection instances)
+    var connections : seq[RootRef]
 
     ## Constructor
     method init(info : NBDDeviceInfo) =
@@ -47,6 +47,10 @@ class NBDDevice:
 
     ## Connect to the device. The default implementation does nothing.
     method connect() {.async.} =
+        return
+
+    ## Disconnect from the device. The default implementation does nothing.
+    method disconnect() {.async.} =
         return
 
     ## Read data from the device
@@ -76,7 +80,7 @@ class NBDDevice:
 
     ## Flush changes to permanent storage. Default implementation does nothing.
     method flush() {.async.} = 
-        discard
+        return
 
 
 

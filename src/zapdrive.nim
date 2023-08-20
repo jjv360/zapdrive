@@ -2,11 +2,15 @@ import std/strformat
 import std/asyncdispatch
 import std/os
 import stdx/osproc
+import std/oids
+import std/json
+import stdx/sequtils
 import reactive
 import ./providers/server
 import ./providers/basedrive
 import ./providers/memdisk
 import ./providers/filedisk
+import ./providers/loader
 import ./ui/trayicon
 import ./wnbd_client
 
@@ -23,29 +27,50 @@ class MyApp of Component:
     ## On mount
     method onMount() =
 
+        # Check that we have a unique ID
+        if ReactiveAppConfig.shared.getString("instanceID") == "":
+            let uuid = $genOid()
+            echo fmt"Generated instance UUID: {uuid}"
+            ReactiveAppConfig.shared.set("instanceID", uuid)
+
         # Start server
-        echo "Starting server..."
         ZapDriveServer.shared.start()
-        echo fmt"Server is listening on {ZapDriveServer.shared.port}"
 
 
     ## Called when the user clicks on the "Add drive" button
     method onAddDrive(e: ReactiveEvent) {.async.} =
     
         # Check drive type
-        var drive : ZDDevice = nil
-        if e.value == "ram": drive = await ZDMemoryDisk.createNew()
-        elif e.value == "file": drive = await ZDFileDisk.createNew("C:\\Users\\jjv36\\Desktop\\FileDisk.vhd")
-        else: 
-            alert("Unknown drive type: " & e.value, "Error", dlgError)
-            return
+        let drive = await ZDDevice.createNew(e.value)
 
         # Drive created, add it
         echo fmt"Created: uuid={drive.uuid} name={drive.info.displayName}" 
         ZapDriveServer.shared.addDevice(drive)
 
+        # Get existing connection info
+        var savedConnections = ReactiveAppConfig.shared.getObjects("disks")
+
+        # Remove one with the existing UUID if it exists
+        let idx = savedConnections.indexIt(it{"uuid"}.getStr("") == drive.uuid)
+        if idx != -1:
+            savedConnections.del(idx)
+
+        # Add new one
+        savedConnections.add(%* {
+            "uuid": drive.uuid,
+            "url": drive.connectionURL,
+            "name": drive.info.displayName,
+            "description": drive.info.displayDescription
+        })
+
+        # Save it back
+        ReactiveAppConfig.shared.set("disks", %savedConnections)
+
         # Connect it immediately
-        await this.onConnectDrive(ReactiveEvent.init("onConnectDrive", drive.uuid))
+        let event = ReactiveEvent.init()
+        event.name = "onConnectDrive"
+        event.value = drive.uuid
+        await this.onConnectDrive(event)
 
         # Update UI
         this.renderAgain()
@@ -57,12 +82,12 @@ class MyApp of Component:
         # Get drive
         var drive = ZapDriveServer.shared.getDevice(e.value)
         if drive == nil:
-            alert("Unknown drive: " & e.value, "Error", dlgError)
+            await alert("Unknown drive: " & e.value, "Error", dlgError)
             return
 
         # Stop if driver is downloading
         if this.driverIsDownloading:
-            alert("Please wait for the driver to finish downloading", "Error", dlgError)
+            await alert("Please wait for the driver to finish downloading", "Error", dlgError)
             return
 
         # Check if installed
@@ -75,7 +100,7 @@ class MyApp of Component:
         else:
 
             # Need to install, confirm with user
-            let accepted = confirm("The WNBD driver is needed to connect to this device. Do you want to install it now?", "Install driver", dlgQuestion)
+            let accepted = await confirm("The WNBD driver is needed to connect to this device. Do you want to install it now?", "Install driver", dlgQuestion)
             if not accepted:
                 echo "User cancelled driver installation"
                 return

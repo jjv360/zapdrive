@@ -219,8 +219,7 @@ class WNBDClient:
         try:
 
             # Open process
-            echo "Running: " & WNBDClient.findWNBD()
-            # let promise = asyncThreadProc(proc() : string =
+            echo "WNBD client connecting..."
             await execElevatedAsync(
                 WNBDClient.findWNBD(),
                 "map",
@@ -228,38 +227,6 @@ class WNBDClient:
                 "--port=" & $this.port,
                 "--instance-name=" & this.exportName
             )
-            #     return ""
-            # )
-            # await promise
-            # let process = startProcess(@[
-            #     WNBDClient.findWNBD(),
-            #     "map",
-            #     "--hostname=" & this.hostname,
-            #     "--port=" & $this.port,
-            #     "--instance-name=" & this.exportName
-            # ].quoteShellCommand, workingDir = "", args = @[], env = nil, { poParentStreams, poEvalCommand })
-
-            # # Wrap pipe into AsyncFD
-            # # let asyncFD = process.outputHandle.AsyncFD
-            # # asyncFD
-            # # register(asyncFD)
-
-            # # # Read output line by line
-            # # while process.running:
-
-            # #     # Log it
-            # #     let line = await asyncFD.readLine()
-            # #     echo "[WNBDClient] " & line
-
-            # # Wait for process to end
-            # while process.peekExitCode == -1:
-            #     await sleepAsync(10)
-
-            # # Check exit code
-            # if process.peekExitCode == 1:
-            #     raise newException(OSError, "WNBD client exited with code 1. Maybe unable to run as administrator?")
-            # elif process.peekExitCode != 0:
-            #     raise newException(OSError, "WNBD client exited with code " & $process.peekExitCode)
 
         except:
 
@@ -269,5 +236,6 @@ class WNBDClient:
         finally:
 
             # Reset state
+            echo "WNBD client disconnected"
             this.status = wnbdClientDisconnected
 

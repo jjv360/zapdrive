@@ -1,13 +1,30 @@
 import std/browsers
 import reactive
-import ../utils/iniparser
 import ../providers/server
 import ../providers/basedrive
 
-# App version
-const nimbleFile = staticRead("../../zapdrive.nimble")
-const ini = parseINI(nimbleFile)
-const appVersion = ini.get("version") 
+## A menu item for a specific drive
+class ZDDriveMenu of Component:
+
+    # Get drive
+    method drive() : ZDDevice = this.props{"device"}.asObject(ZDDevice)
+
+    # On render
+    method render() : Component = components:
+
+        # Menu item
+        MenuItem(title: this.drive.info.displayName):
+
+            # Drive details
+            MenuItem(title: this.drive.info.displayName, disabled)
+            MenuItem(title: this.drive.status, disabled)
+
+            # Actions
+            MenuItem(separator)
+            if this.drive.connections.len == 0: MenuItem(title: "Connect", onPress: proc() = this.sendEventToProps("onConnectDrive", this.drive.uuid))
+            if this.drive.connections.len >= 1: MenuItem(title: "Disconnect", onPress: proc() = this.sendEventToProps("onDisconnectDrive", this.drive.uuid))
+            MenuItem(title: "Remove", onPress: proc() = this.sendEventToProps("onRemoveDrive", this.drive.uuid))
+
 
 ## The ZapDrive tray icon
 class ZDTrayIcon of Component:
@@ -16,24 +33,16 @@ class ZDTrayIcon of Component:
     method render() : Component = components:
 
         # Tray icon
-        TrayIcon(tooltip: "ZapDrive", icon: reactiveAsset("../assets/ZapDrive Windows Tray.png")):
+        TrayIcon(tooltip: "ZapDrive", icon: reactiveAsset("../assets/ZapDrive Windows Tray.png"), onActivate: proc() = this.renderAgain()):
             Menu:
 
                 # Title
-                MenuItem(title: "ZapDrive v" & appVersion, disabled)
+                MenuItem(title: ReactiveApp.name & " v" & ReactiveApp.version, disabled)
                 MenuItem(separator)
 
                 # Drives
                 mapIt(ZapDriveServer.shared.devices):
-                    MenuItem(title: it.info.displayName):
-                        MenuItem(title: it.info.displayName, disabled)
-                        MenuItem(title: it.status, disabled)
-                        MenuItem(separator)
-                        if not it.connected: 
-                            MenuItem(title: "Connect", onPress: proc() = this.sendEventToProps("onConnectDrive", it.uuid))
-                        # else: 
-                        #     MenuItem(title: "Disconnect", onPress: proc() = this.sendEventToProps("onConnectDrive", it.uuid))
-                        MenuItem(title: "Remove", onPress: proc() = this.sendEventToProps("onRemoveDrive", it.uuid))
+                    ZDDriveMenu(device: it, onConnectDrive: this.props{"onConnectDrive"}, onRemoveDrive: this.props{"onRemoveDrive"})
 
                 # No drive label
                 if ZapDriveServer.shared.devices.len == 0:

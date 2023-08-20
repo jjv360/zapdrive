@@ -1,9 +1,9 @@
 import std/asyncdispatch
-import std/oids
 import std/strformat
 import std/strutils
 import std/os
 import std/asyncfile
+import std/uri
 import classes
 import reactive
 import ../nbd
@@ -14,75 +14,64 @@ class ZDFileDisk of ZDDevice:
 
     ## Root path to the drive folder
     var folder = ""
-
-    ## Create a new memory disk.
-    method createNew(path : string) : Future[ZDDevice] {.static, async.} =
-
-        # TODO: Read disk info from file
-
-        # Create it
-        let drive = ZDFileDisk().init()
-        drive.folder = absolutePath(path)
-        drive.uuid = "file-" & $genOid()
-        drive.info = NBDDeviceInfo.init()
-        drive.info.name = drive.uuid
-        drive.info.displayName = "File Disk"
-        drive.info.displayDescription = "Sparse file disk."
-        drive.info.size = 1024 * 1024 * 1024 * 32
-
-        # Ensure blocks folder exists
-        let blocksFolder = drive.folder / "blocks"
-        if not dirExists(blocksFolder):
-            createDir(blocksFolder)
-
-        # Done
-        return drive
     
+    ## Called to check if a file exists
+    method fileExists(path : string) : Future[bool] {.async.} =
+        return fileExists(this.folder / path)
 
-    ## Check if a block exists
-    method blockExists(offset : uint64) : Future[bool] {.async.} =
-
-        # Check if block exists
-        let path = this.folder / "blocks" / ($offset & ".blk")
-
-        # Check if exists
-        return fileExists(path)
-
-
-    ## Read a block from permanent storage
-    method readBlock(offset : uint64) : Future[string] {.async.} =
-
+    
+    ## Called to read a file
+    method readFile(path : string) : Future[string] {.async.} =
+    
         # Open file
-        let path = this.folder / "blocks" / ($offset & ".blk")
-        let file = openAsync(path, fmRead)
+        let fullpath = this.folder / path
+        let file = openAsync(fullpath, fmRead)
         defer: file.close()
 
         # Return file content
         return await file.readAll()
 
 
-    ## Write a block to permanent storage
-    method writeBlock(offset : uint64, data : string) : Future[void] {.async.} =
+    ## Called to write a file
+    method writeFile(path : string, data : string) : Future[void] {.async.} =
+
+        # Ensure folder exists
+        let fullpath = this.folder / path
+        discard existsOrCreateDir(fullpath.parentDir())
     
         # Open file
-        let path = this.folder / "blocks" / ($offset & ".blk")
-        let file = openAsync(path, fmWrite)
+        let file = openAsync(fullpath, fmWrite)
         defer: file.close()
 
         # Write file content
         await file.write(data)
 
 
-    ## Delete a block from permanent storage
-    method deleteBlock(offset : uint64) : Future[void] {.async.} =
+    ## Called to delete a file
+    method deleteFile(path : string) : Future[void] {.async.} =
     
         # Remove existing block
-        let path = this.folder / "blocks" / ($offset & ".blk")
-        if fileExists(path):
-            removeFile(path)
+        let fullpath = this.folder / path
+        if fileExists(fullpath):
+            removeFile(fullpath)
 
 
     ## Fetch debug stats for this device
     method debugStats() : string =
         let superStats = super.debugStats()
         return fmt"{superStats} type=file"
+
+
+    ## Connect to the underlying storage
+    method connectStorage() {.async.} =
+
+        # Get path and strip leading slash
+        var uri = parseUri(this.connectionURL)
+        var path = uri.path
+        if path.startsWith("/"):
+            path = path[1 ..< ^0]
+        
+        # Ensure blocks folder exists
+        this.folder = absolutePath(path)
+        echo "[FileDisk] Connecting to path: " & this.folder
+        discard existsOrCreateDir(this.folder)

@@ -1,88 +1,50 @@
 import std/asyncdispatch
-import std/oids
 import std/strformat
 import stdx/strutils
+import std/tables
 import classes
 import reactive
 import ../nbd
 import ./basedrive
 
-## Last used ID
-var LastID = 1
-
 ## A memory disk. This drive is lost once it is removed.
 class ZDMemoryDisk of ZDDevice:
     
-    ## Blocks
-    var blocks : seq[tuple[offset : uint64, data : string]]
+    ## Memory files
+    var files : Table[string, string]
 
 
-    ## Create a new memory disk.
-    method createNew() : Future[ZDDevice] {.static, async.} =
+    ## Called to check if a file exists
+    method fileExists(path : string) : Future[bool] {.async.} =
+        return this.files.hasKey(path)
 
-        ## Ask user for size
-        alert("Enter size in MB:", "New RAM disk", dlgQuestion)
-
-        # Create it
-        let drive = ZDMemoryDisk().init()
-        drive.uuid = "ramdisk-" & $genOid()
-        drive.info = NBDDeviceInfo.init()
-        drive.info.name = drive.uuid
-        drive.info.displayName = "RAM Disk #" & $LastID
-        drive.info.displayDescription = "Temporary memory drive."
-        drive.info.size = 1024 * 1024 * 512
-        return drive
     
-
-    ## Check if a block exists
-    method blockExists(offset : uint64) : Future[bool] {.async.} =
-
-        # Check blocks
-        for blk in this.blocks:
-            if blk.offset == offset:
-                return true
-
-        # Not found
-        return false
+    ## Called to read a file
+    method readFile(path : string) : Future[string] {.async.} =
+        return this.files[path]
 
 
-    ## Read a block from permanent storage
-    method readBlock(offset : uint64) : Future[string] {.async.} =
-
-        # Check blocks
-        for blk in this.blocks:
-            if blk.offset == offset:
-                return blk.data
-
-        # Not found, return blank zeros. Missing blocks are just "holes" of zeros.
-        return newString(this.blockSize, filledWith = 0)
+    ## Called to write a file
+    method writeFile(path : string, data : string) : Future[void] {.async.} =
+        this.files[path] = data
 
 
-    ## Write a block to permanent storage
-    method writeBlock(offset : uint64, data : string) : Future[void] {.async.} =
-    
-        # Remove existing block
-        for i in 0 ..< this.blocks.len:
-            if this.blocks[i].offset == offset:
-                this.blocks.del(i)
-                break
-
-        # Add new data
-        this.blocks.add(( offset, data ))
-
-
-    ## Delete a block from permanent storage
-    method deleteBlock(offset : uint64) : Future[void] {.async.} =
-    
-        # Remove existing block
-        for i in 0 ..< this.blocks.len:
-            if this.blocks[i].offset == offset:
-                this.blocks.del(i)
-                break
+    ## Called to delete a file
+    method deleteFile(path : string) : Future[void] {.async.} =
+        this.files.del(path)
 
 
     ## Fetch debug stats for this device
     method debugStats() : string =
         let superStats = super.debugStats()
-        let memoryUsage = formatSize(this.blocks.len * this.blockSize.int)
+
+        # Get memory usage
+        var usage = 0
+        for v in this.files.values: usage += v.len
+        let memoryUsage = formatSize(usage)
         return fmt"{superStats} type=mem usage={memoryUsage}"
+
+
+    ## Connect to the underlying storage, which for a mem disk does nothing
+    method connectStorage() {.async.} =
+        discard

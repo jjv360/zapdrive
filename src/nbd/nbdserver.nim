@@ -89,6 +89,7 @@ class NBDServer:
         connection.log(fmt"Incoming connection from {connection.remoteAddress}")
 
         # Catch errors
+        var connectedDevice : NBDDevice = nil
         try:
 
             # Send connection event
@@ -126,21 +127,23 @@ class NBDServer:
             var deviceInfo = await handleOptionHaggling(connection, devices)
 
             # Open device
-            var device = await this.openDevice(deviceInfo)
-            if device == nil:
+            connectedDevice = await this.openDevice(deviceInfo)
+            if connectedDevice == nil:
                 raise newException(IOError, "Device not found.")
 
+            # Add our connection to the device's connection list
+            connectedDevice.connections.add(connection)
+
             # Connect the device if needed
-            if not device.connected:
-                await device.connect()
-                device.connected = true
+            if connectedDevice.connections.len == 1:
+                await connectedDevice.connect()
             
             # Notify the connection
-            await connection.onDeviceAccessStart(connection.device)
+            connection.device = connectedDevice
+            await connection.onDeviceAccessStart(connectedDevice)
 
             # Start the connection
-            connection.log(fmt"Opened device '{device.info.name}' successfully.")
-            connection.device = device
+            connection.log(fmt"Opened device '{connectedDevice.info.name}' successfully.")
 
             # Option haggling complete, now we're in transmission mode
             await handleTransmissionPhase(connection)
@@ -165,7 +168,20 @@ class NBDServer:
         if idx != -1: this.clients.del(idx)
 
         # Send close event
-        await connection.onConnectionClose()
+        try:
+            await connection.onConnectionClose()
+        except:
+            connection.log(fmt"Error on connection close: {getCurrentExceptionMsg()}")
+
+        # Remove connection from the device's connection list, if it exists
+        if connectedDevice != nil:
+            let idx = connectedDevice.connections.find(connection)
+            if idx != -1:
+                connectedDevice.connections.del(idx)
+
+        # If all connections to this device are now removed, close it
+        if connectedDevice != nil and connectedDevice.connections.len == 0:
+            await connectedDevice.disconnect()
 
 
     
